@@ -32,7 +32,7 @@
 - **Troubleshooting Pintar:** Diskusikan masalah container Anda langsung dengan AI (OpenAI/Ollama).
 - **Context-Aware:** Chatbot otomatis membaca log dan status container untuk memberikan solusi yang relevan.
 
-![Chatbot Assistant](web/image3.png)
+
 
 ### 🛠️ Manajemen Resource Lainnya
 - **Images:** Pull, Tag, Inspect, dan Hapus Docker Image.
@@ -139,6 +139,8 @@ sudo ufw reload
     *   **URI:** Alamat IP server remote (contoh: `tcp://192.168.1.50:2375`)
 5.  Klik **Connect**. Server baru akan muncul di daftar dan siap dikelola!
 
+
+![Chatbot Assistant](web/image3.png)
 ## 🤖 Konfigurasi AI Chatbot (OpenAI / Ollama)
 
 Docker Manager kini dilengkapi dengan asisten AI untuk membantu troubleshooting. Secara default, fitur ini menggunakan API OpenAI, namun Anda dapat mengubahnya ke Local AI (Ollama).
