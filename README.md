@@ -2,7 +2,7 @@
 
 **Docker Manager** adalah aplikasi web modern dan ringan untuk mengelola container Docker Anda dengan mudah. Dibangun dengan backend Go (Golang) yang cepat dan frontend Vanilla JS yang responsif, aplikasi ini menawarkan pengalaman manajemen Docker yang intuitif tanpa bloatware.
 
-![Docker Dashboard](frontend/image1.png)
+![Docker Dashboard](web/image1.png)
 
 ## ✨ Fitur Utama
 
@@ -22,7 +22,7 @@
 - **WebSocket Connection:** Koneksi real-time yang stabil dan responsif.
 - **Fitur Lengkap:** Mendukung copy-paste, command history, dan resizing otomatis.
 
-![Terminal View](frontend/image2.png)
+![Terminal View](web/image2.png)
 
 ### 🌍 Multi-Host Support
 - **Kelola Banyak Server:** Hubungkan dan kelola multiple Docker Hosts (Local & Remote VM/VPS) dari satu dashboard.

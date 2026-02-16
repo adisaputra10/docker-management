@@ -25,6 +25,11 @@ func InitDB() error {
 		return err
 	}
 
+	// Enable WAL mode for better concurrency
+	if _, err := DB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		log.Printf("Warning: Failed to enable WAL mode: %v", err)
+	}
+
 	// Create activity_logs table
 	query := `
 	CREATE TABLE IF NOT EXISTS activity_logs (
