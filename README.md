@@ -95,7 +95,7 @@ Lakukan langkah ini di setiap server/VM yang ingin Anda kelola:
     Cari baris yang dimulai dengan `ExecStart=` dan ubah menjadi:
     ```bash
     # Expose API Docker di port 2375 (TCP)
-    ExecStart=/usr/bin/dockerd -H fd:// -H tcp://0.0.0.0:2375
+    ExecStart=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock -H tcp://0.0.0.0:2375
     ```
 
 2.  **Reload & Restart Docker:**
