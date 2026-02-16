@@ -28,6 +28,10 @@
 - **Kelola Banyak Server:** Hubungkan dan kelola multiple Docker Hosts (Local & Remote VM/VPS) dari satu dashboard.
 - **Koneksi Aman:** Mendukung koneksi via TCP Socket dan SSH Tunneling.
 
+### 🤖 AI Chatbot Assistant
+- **Troubleshooting Pintar:** Diskusikan masalah container Anda langsung dengan AI (OpenAI/Ollama).
+- **Context-Aware:** Chatbot otomatis membaca log dan status container untuk memberikan solusi yang relevan.
+
 ### 🛠️ Manajemen Resource Lainnya
 - **Images:** Pull, Tag, Inspect, dan Hapus Docker Image.
 - **Volumes:** Buat dan kelola Volume data persisten.
@@ -133,6 +137,22 @@ sudo ufw reload
     *   **URI:** Alamat IP server remote (contoh: `tcp://192.168.1.50:2375`)
 5.  Klik **Connect**. Server baru akan muncul di daftar dan siap dikelola!
 
+## 🤖 Konfigurasi AI Chatbot (OpenAI / Ollama)
+
+Docker Manager kini dilengkapi dengan asisten AI untuk membantu troubleshooting. Secara default, fitur ini menggunakan API OpenAI, namun Anda dapat mengubahnya ke Local AI (Ollama).
+
+### Cara Mengatur:
+
+1.  Klik ikon **Chat** di pojok kanan bawah layar.
+2.  Klik ikon **Settings** (⚙️) di header chat window.
+3.  Masukkan konfigurasi API Anda:
+    -   **API Key:** Kunci API OpenAI Anda (`sk-...`). Jika menggunakan Ollama, Anda bisa memasukkan dummy text (misal: `ollama`).
+    -   **Base URL:** Endpoint API.
+        -   Untuk **OpenAI**: `https://api.openai.com/v1` (Default)
+        -   Untuk **Ollama** (Local): `http://localhost:11434/v1`
+4.  **Save Settings** untuk menyimpan konfigurasi.
+
+*Catatan: API Key disimpan secara aman di database lokal aplikasi Anda.*
 ---
 
 *Dibuat dengan ❤️ untuk komunitas Docker.*
