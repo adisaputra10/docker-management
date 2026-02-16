@@ -1,0 +1,231 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"strings"
+
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/network"
+	"github.com/docker/go-connections/nat"
+	"github.com/gorilla/mux"
+)
+
+// Create container
+func createContainer(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name          string            `json:"name"`
+		Image         string            `json:"image"`
+		Cmd           []string          `json:"cmd"`
+		Env           []string          `json:"env"`
+		Ports         []string          `json:"ports"`         // format: "8080:80/tcp"
+		Volumes       []string          `json:"volumes"`       // format: "/host:/container"
+		NetworkMode   string            `json:"networkMode"`   // bridge, host, none
+		RestartPolicy string            `json:"restartPolicy"` // no, always, on-failure, unless-stopped
+		Labels        map[string]string `json:"labels"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Image == "" {
+		http.Error(w, "Image is required", http.StatusBadRequest)
+		return
+	}
+
+	// Set defaults
+	if req.NetworkMode == "" {
+		req.NetworkMode = "bridge"
+	}
+	if req.RestartPolicy == "" {
+		req.RestartPolicy = "no"
+	}
+
+	// Parse port bindings
+	portBindings := nat.PortMap{}
+	exposedPorts := nat.PortSet{}
+
+	for _, portStr := range req.Ports {
+		parts := strings.Split(portStr, ":")
+		if len(parts) >= 2 {
+			hostPort := parts[0]
+			containerPort := parts[1]
+
+			// Handle protocol (tcp/udp)
+			if !strings.Contains(containerPort, "/") {
+				containerPort += "/tcp"
+			}
+
+			port, err := nat.NewPort(strings.Split(containerPort, "/")[1], strings.Split(containerPort, "/")[0])
+			if err != nil {
+				continue
+			}
+
+			portBindings[port] = []nat.PortBinding{
+				{
+					HostIP:   "0.0.0.0",
+					HostPort: hostPort,
+				},
+			}
+
+			exposedPorts[port] = struct{}{}
+		}
+	}
+
+	// Parse volume bindings
+	binds := []string{}
+	for _, vol := range req.Volumes {
+		binds = append(binds, vol)
+	}
+
+	// Create container config
+	config := &container.Config{
+		Image:        req.Image,
+		Cmd:          req.Cmd,
+		Env:          req.Env,
+		ExposedPorts: exposedPorts,
+		Labels:       req.Labels,
+	}
+
+	// Parse restart policy
+	var restartPolicy container.RestartPolicy
+	switch req.RestartPolicy {
+	case "always":
+		restartPolicy = container.RestartPolicy{Name: container.RestartPolicyAlways}
+	case "on-failure":
+		restartPolicy = container.RestartPolicy{
+			Name:              container.RestartPolicyOnFailure,
+			MaximumRetryCount: 3,
+		}
+	case "unless-stopped":
+		restartPolicy = container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}
+	default:
+		restartPolicy = container.RestartPolicy{Name: container.RestartPolicyDisabled}
+	}
+
+	// Create host config
+	hostConfig := &container.HostConfig{
+		PortBindings:  portBindings,
+		Binds:         binds,
+		NetworkMode:   container.NetworkMode(req.NetworkMode),
+		RestartPolicy: restartPolicy,
+	}
+
+	// Create network config
+	networkConfig := &network.NetworkingConfig{}
+
+	// Get docker client
+	cli, err := getClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Create container
+	resp, err := cli.ContainerCreate(
+		context.Background(),
+		config,
+		hostConfig,
+		networkConfig,
+		nil,
+		req.Name,
+	)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logActivity("create_container", req.Name, "error")
+		return
+	}
+
+	logActivity("create_container", req.Name, "success")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"id":       resp.ID,
+		"warnings": resp.Warnings,
+	})
+}
+
+// Rename container
+func renameContainer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var req struct {
+		Name string `json:"name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	cli, err := getClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = cli.ContainerRename(context.Background(), id, req.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logActivity("rename_container", id, "error")
+		return
+	}
+
+	logActivity("rename_container", id+" -> "+req.Name, "success")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"success": true})
+}
+
+// Inspect container
+func inspectContainer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	cli, err := getClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	info, err := cli.ContainerInspect(context.Background(), id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(info)
+}
+
+// Prune stopped containers
+func pruneContainers(w http.ResponseWriter, r *http.Request) {
+	cli, err := getClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	report, err := cli.ContainersPrune(context.Background(), filters.Args{})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logActivity("prune_containers", "all", "error")
+		return
+	}
+
+	logActivity("prune_containers", "all", "success")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":           true,
+		"containersDeleted": report.ContainersDeleted,
+		"spaceReclaimed":    report.SpaceReclaimed,
+	})
+}

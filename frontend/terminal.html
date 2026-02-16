@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terminal - Docker Manager</title>
+    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="modern_ui.css?v=1">
+
+    <!-- Xterm.js -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+
+    <style>
+        body {
+            background: #0f172a;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            /* Full viewport height */
+            margin: 0;
+            overflow: hidden;
+            /* Prevent body scroll */
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+
+        /* Compact Top Bar */
+        .compact-header {
+            height: 50px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 1.5rem;
+            z-index: 20;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        /* Back Button */
+        .btn-back {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #94a3b8;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .btn-back:hover {
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .separator {
+            width: 1px;
+            height: 20px;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Container Info */
+        .container-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+            }
+        }
+
+        #container-name {
+            font-family: 'Consolas', 'Monaco', monospace;
+            color: #f8fafc;
+            font-weight: 600;
+            font-size: 0.95rem;
+            letter-spacing: 0.02em;
+        }
+
+        .status-text {
+            font-size: 0.75rem;
+            color: #64748b;
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        /* Terminal Window */
+        .terminal-wrapper {
+            flex: 1;
+            /* Take remaining height */
+            background: #000;
+            position: relative;
+            padding: 10px;
+            /* Internal padding */
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #terminal {
+            flex: 1;
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Xterm overrides */
+        .xterm-viewport {
+            scrollbar-width: thin;
+            scrollbar-color: #334155 #0f172a;
+        }
+
+        .xterm .xterm-viewport::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .xterm .xterm-viewport::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+            background-color: #334155;
+            border-radius: 4px;
+        }
+
+        /* Custom Action Buttons */
+        .btn-action {
+            background: transparent;
+            color: #cbd5e1;
+            border: 1px solid transparent;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.8rem;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-action:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .btn-action.danger:hover {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Compact Header -->
+    <div class="compact-header">
+        <div class="header-left">
+            <a href="/" class="btn-back">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+                Dashboard
+            </a>
+            <div class="separator"></div>
+            <div class="container-info">
+                <div class="status-dot" id="connection-dot"></div>
+                <span id="container-name">Loading...</span>
+                <span id="terminal-status" class="status-text">Connecting...</span>
+            </div>
+        </div>
+
+        <div class="header-right">
+            <button class="btn-action" onclick="clearTerminal()">
+                Clear
+            </button>
+            <button class="btn-action danger" onclick="closeTerminal()">
+                Close
+            </button>
+            <div class="separator"></div>
+            <button class="btn-action" onclick="toggleFullscreen()" title="Fullscreen">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path
+                        d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Terminal Area -->
+    <div class="terminal-wrapper">
+        <div id="terminal"></div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-web-links@0.9.0/lib/xterm-addon-web-links.min.js"></script>
+    <script>
+        // Terminal Logic
+        const urlParams = new URLSearchParams(window.location.search);
+        const containerId = urlParams.get('id');
+        const containerName = urlParams.get('name');
+
+        if (!containerId) {
+            alert('No container ID provided');
+            window.location.href = '/';
+        }
+
+        document.getElementById('container-name').textContent = containerName || containerId.substring(0, 12);
+        document.title = `Terminal: ${containerName || containerId}`;
+
+        // Initialize Xterm
+        const term = new Terminal({
+            cursorBlink: true,
+            theme: {
+                background: '#09090b', // Very dark bg
+                foreground: '#f8fafc',
+                cursor: '#3b82f6',
+                selection: 'rgba(59, 130, 246, 0.3)'
+            },
+            fontSize: 14,
+            fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+            convertEol: true,
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.loadAddon(new WebLinksAddon.WebLinksAddon());
+
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
+
+        // Resize observer
+        window.addEventListener('resize', () => fitAddon.fit());
+
+        // WebSocket Login
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        // USE WINDOW HOST NOT LOCALHOST TO SUPPORT REMOTE ACCESS IF HOSTED
+        const wsUrl = `${protocol}//${window.location.host}/api/containers/${containerId}/exec`;
+
+        let socket;
+        let reconnectInterval;
+
+        function connect() {
+            socket = new WebSocket(wsUrl);
+
+            socket.onopen = () => {
+                document.getElementById('terminal-status').textContent = 'CONNECTED';
+                document.getElementById('connection-dot').style.background = '#10b981';
+                document.getElementById('connection-dot').style.boxShadow = '0 0 8px #10b981';
+
+                term.write('\r\n\x1b[32m✔ Connected to container shell\x1b[0m\r\n\r\n');
+                term.focus();
+
+                // Send initial resize
+                // fitAddon.fit(); // Handled by resize event usually
+            };
+
+            socket.onmessage = (event) => {
+                term.write(event.data);
+            };
+
+            socket.onclose = () => {
+                document.getElementById('terminal-status').textContent = 'DISCONNECTED';
+                document.getElementById('connection-dot').style.background = '#ef4444';
+                document.getElementById('connection-dot').style.boxShadow = 'none';
+                term.write('\r\n\x1b[31m✖ Connection closed. Reconnecting in 3s...\x1b[0m\r\n');
+
+                clearTimeout(reconnectInterval);
+                reconnectInterval = setTimeout(connect, 3000);
+            };
+
+            socket.onerror = (error) => {
+                console.error('WebSocket Error:', error);
+            };
+        }
+
+        term.onData(data => {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(data);
+            }
+        });
+
+        connect();
+
+        // Actions
+        function clearTerminal() {
+            term.clear();
+        }
+
+        function closeTerminal() {
+            if (confirm('Close terminal session?')) {
+                if (socket) socket.close();
+                window.location.href = '/';
+            }
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.body.requestFullscreen();
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>
