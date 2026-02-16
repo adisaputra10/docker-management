@@ -57,6 +57,17 @@ func InitDB() error {
 		return err
 	}
 
+	// Create settings table
+	querySettings := `
+	CREATE TABLE IF NOT EXISTS settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);
+	`
+	if _, err = DB.Exec(querySettings); err != nil {
+		return err
+	}
+
 	// Insert default Local host if not exists
 	var count int
 	if err := DB.QueryRow("SELECT COUNT(*) FROM docker_hosts").Scan(&count); err == nil && count == 0 {
@@ -102,6 +113,20 @@ func GetActivityLogs() ([]models.ActivityLog, error) {
 		logs = append(logs, logEntry)
 	}
 	return logs, nil
+}
+
+func GetSetting(key string) (string, error) {
+	var value string
+	err := DB.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return value, err
+}
+
+func SetSetting(key, value string) error {
+	_, err := DB.Exec("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", key, value)
+	return err
 }
 
 func Close() {

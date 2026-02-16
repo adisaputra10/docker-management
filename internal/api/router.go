@@ -56,5 +56,11 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/hosts/{id}", removeHost).Methods("DELETE")
 	api.HandleFunc("/hosts/{id}/inspect", inspectHost).Methods("GET")
 
+	// Chat / AI
+	// Handler functions are defined in chat.go (same package)
+	api.HandleFunc("/chat", handleChat).Methods("POST")
+	api.HandleFunc("/settings", getSettings).Methods("GET")
+	api.HandleFunc("/settings", saveSettings).Methods("POST")
+
 	return r
 }
