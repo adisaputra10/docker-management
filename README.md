@@ -43,7 +43,7 @@
 ## 📦 Cara Install & Menjalankan
 
 ### Prasyarat
-- Go 1.21+ terinstall
+- Go 1.24+ terinstall
 - Docker Daemon berjalan
 
 ### Langkah Instalasi
@@ -54,17 +54,30 @@
     cd docker-management
     ```
 
-2.  **Jalankan Aplikasi**
+2.  **Jalankan Aplikasi (Mode Development)**
+    
+    Menggunakan script (Windows):
+    Double click **`start.bat`**
+
+    Atau manual via terminal:
     ```bash
-    go run main.go
+    go run cmd/server/main.go
     ```
     *Aplikasi akan berjalan di `http://localhost:8080`*
 
-3.  **Build untuk Production**
+3.  **Build untuk Production (Single Binary)**
+    
+    Aplikasi ini mendukung **Single Binary Build**, artinya frontend (HTML/CSS/JS) sudah tertanam di dalam file `.exe`. Anda cukup mendistribusikan satu file saja!
+
+    Menggunakan script (Windows):
+    Double click **`build.bat`**
+    
+    Atau manual via terminal:
     ```bash
-    go build -o docker-manager.exe
-    ./docker-manager.exe
+    go build -o docker-manager.exe ./cmd/server
     ```
+
+    Setelah build selesai, jalankan file `docker-manager.exe` dan buka browser di `http://localhost:8080`.
 
 ## 🔌 Menghubungkan ke Remote Host (Multi-Server Setup)
 

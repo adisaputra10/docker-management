@@ -1,10 +1,11 @@
-package main
+package api
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
 
+	"github.com/adisaputra10/docker-management/internal/database"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/gorilla/mux"
@@ -12,7 +13,7 @@ import (
 
 // List all volumes
 func listVolumes(w http.ResponseWriter, r *http.Request) {
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -67,7 +68,7 @@ func createVolume(w http.ResponseWriter, r *http.Request) {
 		req.Driver = "local"
 	}
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -81,11 +82,11 @@ func createVolume(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("create_volume", req.Name, "error")
+		database.LogActivity("create_volume", req.Name, "error")
 		return
 	}
 
-	logActivity("create_volume", vol.Name, "success")
+	database.LogActivity("create_volume", vol.Name, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -99,7 +100,7 @@ func removeVolume(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	name := vars["name"]
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -108,11 +109,11 @@ func removeVolume(w http.ResponseWriter, r *http.Request) {
 	err = cli.VolumeRemove(context.Background(), name, true)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("remove_volume", name, "error")
+		database.LogActivity("remove_volume", name, "error")
 		return
 	}
 
-	logActivity("remove_volume", name, "success")
+	database.LogActivity("remove_volume", name, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -123,7 +124,7 @@ func inspectVolume(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	name := vars["name"]
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -141,7 +142,7 @@ func inspectVolume(w http.ResponseWriter, r *http.Request) {
 
 // Prune unused volumes
 func pruneVolumes(w http.ResponseWriter, r *http.Request) {
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -150,11 +151,11 @@ func pruneVolumes(w http.ResponseWriter, r *http.Request) {
 	report, err := cli.VolumesPrune(context.Background(), filters.Args{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("prune_volumes", "all", "error")
+		database.LogActivity("prune_volumes", "all", "error")
 		return
 	}
 
-	logActivity("prune_volumes", "all", "success")
+	database.LogActivity("prune_volumes", "all", "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

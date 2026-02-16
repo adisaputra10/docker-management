@@ -1,17 +1,68 @@
-package main
+package api
 
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/adisaputra10/docker-management/internal/database"
+	"github.com/adisaputra10/docker-management/internal/models"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
 	"github.com/gorilla/mux"
 )
+
+// List Containers
+func listContainers(w http.ResponseWriter, r *http.Request) {
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	containers, err := cli.ContainerList(context.Background(), container.ListOptions{
+		All: true,
+	})
+	if err != nil {
+		database.LogActivity("list_containers", "all", "error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var containerInfos []models.ContainerInfo
+	for _, c := range containers {
+		var ports []string
+		for _, port := range c.Ports {
+			if port.PublicPort != 0 {
+				ports = append(ports, fmt.Sprintf("%d:%d/%s", port.PublicPort, port.PrivatePort, port.Type))
+			}
+		}
+
+		name := ""
+		if len(c.Names) > 0 {
+			name = c.Names[0]
+		}
+
+		containerInfos = append(containerInfos, models.ContainerInfo{
+			ID:      c.ID[:12],
+			Name:    name,
+			Image:   c.Image,
+			State:   c.State,
+			Status:  c.Status,
+			Created: c.Created,
+			Ports:   ports,
+			Labels:  c.Labels,
+		})
+	}
+
+	database.LogActivity("list_containers", "all", "success")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(containerInfos)
+}
 
 // Create container
 func createContainer(w http.ResponseWriter, r *http.Request) {
@@ -78,9 +129,7 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 
 	// Parse volume bindings
 	binds := []string{}
-	for _, vol := range req.Volumes {
-		binds = append(binds, vol)
-	}
+	binds = append(binds, req.Volumes...)
 
 	// Create container config
 	config := &container.Config{
@@ -119,7 +168,7 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 	networkConfig := &network.NetworkingConfig{}
 
 	// Get docker client
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -137,11 +186,11 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("create_container", req.Name, "error")
+		database.LogActivity("create_container", req.Name, "error")
 		return
 	}
 
-	logActivity("create_container", req.Name, "success")
+	database.LogActivity("create_container", req.Name, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -165,7 +214,7 @@ func renameContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -174,11 +223,11 @@ func renameContainer(w http.ResponseWriter, r *http.Request) {
 	err = cli.ContainerRename(context.Background(), id, req.Name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("rename_container", id, "error")
+		database.LogActivity("rename_container", id, "error")
 		return
 	}
 
-	logActivity("rename_container", id+" -> "+req.Name, "success")
+	database.LogActivity("rename_container", id+" -> "+req.Name, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -189,7 +238,7 @@ func inspectContainer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -207,7 +256,7 @@ func inspectContainer(w http.ResponseWriter, r *http.Request) {
 
 // Prune stopped containers
 func pruneContainers(w http.ResponseWriter, r *http.Request) {
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -216,11 +265,11 @@ func pruneContainers(w http.ResponseWriter, r *http.Request) {
 	report, err := cli.ContainersPrune(context.Background(), filters.Args{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("prune_containers", "all", "error")
+		database.LogActivity("prune_containers", "all", "error")
 		return
 	}
 
-	logActivity("prune_containers", "all", "success")
+	database.LogActivity("prune_containers", "all", "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -228,4 +277,100 @@ func pruneContainers(w http.ResponseWriter, r *http.Request) {
 		"containersDeleted": report.ContainersDeleted,
 		"spaceReclaimed":    report.SpaceReclaimed,
 	})
+}
+
+func startContainer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	containerID := vars["id"]
+
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = cli.ContainerStart(context.Background(), containerID, container.StartOptions{})
+	if err != nil {
+		database.LogActivity("start_container", containerID, "error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	database.LogActivity("start_container", containerID, "success")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
+}
+
+func stopContainer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	containerID := vars["id"]
+
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	timeout := 10
+	err = cli.ContainerStop(context.Background(), containerID, container.StopOptions{
+		Timeout: &timeout,
+	})
+	if err != nil {
+		database.LogActivity("stop_container", containerID, "error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	database.LogActivity("stop_container", containerID, "success")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "stopped"})
+}
+
+func restartContainer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	containerID := vars["id"]
+
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	timeout := 10
+	err = cli.ContainerRestart(context.Background(), containerID, container.StopOptions{
+		Timeout: &timeout,
+	})
+	if err != nil {
+		database.LogActivity("restart_container", containerID, "error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	database.LogActivity("restart_container", containerID, "success")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "restarted"})
+}
+
+func removeContainer(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	containerID := vars["id"]
+
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	err = cli.ContainerRemove(context.Background(), containerID, container.RemoveOptions{
+		Force: true,
+	})
+	if err != nil {
+		database.LogActivity("remove_container", containerID, "error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	database.LogActivity("remove_container", containerID, "success")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 }

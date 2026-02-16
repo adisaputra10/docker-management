@@ -1,10 +1,11 @@
-package main
+package api
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
 
+	"github.com/adisaputra10/docker-management/internal/database"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
@@ -13,7 +14,7 @@ import (
 
 // List all networks
 func listNetworks(w http.ResponseWriter, r *http.Request) {
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -93,7 +94,7 @@ func createNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create network
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -102,11 +103,11 @@ func createNetwork(w http.ResponseWriter, r *http.Request) {
 	resp, err := cli.NetworkCreate(context.Background(), req.Name, config)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("create_network", req.Name, "error")
+		database.LogActivity("create_network", req.Name, "error")
 		return
 	}
 
-	logActivity("create_network", req.Name, "success")
+	database.LogActivity("create_network", req.Name, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -121,7 +122,7 @@ func removeNetwork(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -130,11 +131,11 @@ func removeNetwork(w http.ResponseWriter, r *http.Request) {
 	err = cli.NetworkRemove(context.Background(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("remove_network", id, "error")
+		database.LogActivity("remove_network", id, "error")
 		return
 	}
 
-	logActivity("remove_network", id, "success")
+	database.LogActivity("remove_network", id, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -145,7 +146,7 @@ func inspectNetwork(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -175,7 +176,7 @@ func connectNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -184,11 +185,11 @@ func connectNetwork(w http.ResponseWriter, r *http.Request) {
 	err = cli.NetworkConnect(context.Background(), networkID, req.Container, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("connect_network", networkID, "error")
+		database.LogActivity("connect_network", networkID, "error")
 		return
 	}
 
-	logActivity("connect_network", networkID+" to "+req.Container, "success")
+	database.LogActivity("connect_network", networkID+" to "+req.Container, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -209,7 +210,7 @@ func disconnectNetwork(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -218,11 +219,11 @@ func disconnectNetwork(w http.ResponseWriter, r *http.Request) {
 	err = cli.NetworkDisconnect(context.Background(), networkID, req.Container, req.Force)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("disconnect_network", networkID, "error")
+		database.LogActivity("disconnect_network", networkID, "error")
 		return
 	}
 
-	logActivity("disconnect_network", networkID+" from "+req.Container, "success")
+	database.LogActivity("disconnect_network", networkID+" from "+req.Container, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -230,7 +231,7 @@ func disconnectNetwork(w http.ResponseWriter, r *http.Request) {
 
 // Prune unused networks
 func pruneNetworks(w http.ResponseWriter, r *http.Request) {
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -239,11 +240,11 @@ func pruneNetworks(w http.ResponseWriter, r *http.Request) {
 	report, err := cli.NetworksPrune(context.Background(), filters.Args{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("prune_networks", "all", "error")
+		database.LogActivity("prune_networks", "all", "error")
 		return
 	}
 
-	logActivity("prune_networks", "all", "success")
+	database.LogActivity("prune_networks", "all", "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

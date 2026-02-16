@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -7,11 +7,69 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/adisaputra10/docker-management/internal/database"
+	"github.com/adisaputra10/docker-management/internal/models"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/gorilla/mux"
 )
+
+// List Images
+func listImages(w http.ResponseWriter, r *http.Request) {
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	images, err := cli.ImageList(context.Background(), image.ListOptions{
+		All: true,
+	})
+	if err != nil {
+		database.LogActivity("list_images", "all", "error")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var imageInfos []models.ImageInfo
+	for _, img := range images {
+		repository := "<none>"
+		tag := "<none>"
+
+		if len(img.RepoTags) > 0 {
+			repoTag := img.RepoTags[0]
+			// Split repository and tag
+			parts := strings.Split(repoTag, ":")
+			if len(parts) >= 2 {
+				repository = parts[0]
+				tag = parts[1]
+			} else {
+				repository = repoTag
+			}
+		}
+
+		// Handle case where ID might be shorter than expected? Usually sha256:...
+		shortID := ""
+		if len(img.ID) > 19 {
+			shortID = img.ID[7:19]
+		} else {
+			shortID = img.ID
+		}
+
+		imageInfos = append(imageInfos, models.ImageInfo{
+			ID:         shortID,
+			Repository: repository,
+			Tag:        tag,
+			Size:       img.Size,
+			Created:    img.Created,
+		})
+	}
+
+	database.LogActivity("list_images", "all", "success")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(imageInfos)
+}
 
 // Pull image from registry
 func pullImage(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +93,7 @@ func pullImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Pull image
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -44,7 +102,7 @@ func pullImage(w http.ResponseWriter, r *http.Request) {
 	out, err := cli.ImagePull(context.Background(), req.Image, image.PullOptions{})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("pull_image", req.Image, "error")
+		database.LogActivity("pull_image", req.Image, "error")
 		return
 	}
 	defer out.Close()
@@ -52,7 +110,7 @@ func pullImage(w http.ResponseWriter, r *http.Request) {
 	// Read and discard output (in production, you might want to stream this)
 	io.Copy(io.Discard, out)
 
-	logActivity("pull_image", req.Image, "success")
+	database.LogActivity("pull_image", req.Image, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -69,7 +127,7 @@ func removeImage(w http.ResponseWriter, r *http.Request) {
 	// Get force parameter from query
 	force := r.URL.Query().Get("force") == "true"
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -82,11 +140,11 @@ func removeImage(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("remove_image", id, "error")
+		database.LogActivity("remove_image", id, "error")
 		return
 	}
 
-	logActivity("remove_image", id, "success")
+	database.LogActivity("remove_image", id, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -112,7 +170,7 @@ func tagImage(w http.ResponseWriter, r *http.Request) {
 		tag = parts[1]
 	}
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -121,11 +179,11 @@ func tagImage(w http.ResponseWriter, r *http.Request) {
 	err = cli.ImageTag(context.Background(), req.Source, repo+":"+tag)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("tag_image", req.Source+" -> "+req.Target, "error")
+		database.LogActivity("tag_image", req.Source+" -> "+req.Target, "error")
 		return
 	}
 
-	logActivity("tag_image", req.Source+" -> "+req.Target, "success")
+	database.LogActivity("tag_image", req.Source+" -> "+req.Target, "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"success": true})
@@ -136,7 +194,7 @@ func inspectImage(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id := vars["id"]
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -163,7 +221,7 @@ func pruneImages(w http.ResponseWriter, r *http.Request) {
 		pruneFilters.Add("dangling", "true")
 	}
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -172,11 +230,11 @@ func pruneImages(w http.ResponseWriter, r *http.Request) {
 	report, err := cli.ImagesPrune(context.Background(), pruneFilters)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		logActivity("prune_images", "all", "error")
+		database.LogActivity("prune_images", "all", "error")
 		return
 	}
 
-	logActivity("prune_images", "all", "success")
+	database.LogActivity("prune_images", "all", "success")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -194,7 +252,7 @@ func searchImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cli, err := getClient(r)
+	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
