@@ -140,10 +140,11 @@ sudo ufw reload
 5.  Klik **Connect**. Server baru akan muncul di daftar dan siap dikelola!
 
 
-![Chatbot Assistant](web/image3.png)
+
 ## 🤖 Konfigurasi AI Chatbot (OpenAI / Ollama)
 
 Docker Manager kini dilengkapi dengan asisten AI untuk membantu troubleshooting. Secara default, fitur ini menggunakan API OpenAI, namun Anda dapat mengubahnya ke Local AI (Ollama).
+![Chatbot Assistant](web/image3.png)
 
 ### Cara Mengatur:
 
