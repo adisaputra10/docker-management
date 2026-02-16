@@ -32,6 +32,8 @@
 - **Troubleshooting Pintar:** Diskusikan masalah container Anda langsung dengan AI (OpenAI/Ollama).
 - **Context-Aware:** Chatbot otomatis membaca log dan status container untuk memberikan solusi yang relevan.
 
+![Chatbot Assistant](web/image3.png)
+
 ### 🛠️ Manajemen Resource Lainnya
 - **Images:** Pull, Tag, Inspect, dan Hapus Docker Image.
 - **Volumes:** Buat dan kelola Volume data persisten.
