@@ -552,7 +552,8 @@ async function showCreateContainerModal() {
         showModal('Create Container', content);
 
     } catch (error) {
-        showToast('Error loading networks/volumes', 'error');
+        console.error('Error loading networks/volumes:', error);
+        showToast(`Error: ${error.message || 'Failed to load networks/volumes'}`, 'error');
         closeModal();
     }
 }

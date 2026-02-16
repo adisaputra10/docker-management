@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/adisaputra10/docker-management/internal/database"
 	"github.com/adisaputra10/docker-management/internal/models"
@@ -50,6 +51,15 @@ func createHost(w http.ResponseWriter, r *http.Request) {
 	if req.Name == "" || req.URI == "" {
 		http.Error(w, "Name and URI are required", http.StatusBadRequest)
 		return
+	}
+
+	// Normalize URI
+	if !strings.Contains(req.URI, "://") {
+		if strings.HasPrefix(req.URI, "/") || strings.HasPrefix(req.URI, ".") {
+			req.URI = "unix://" + req.URI
+		} else {
+			req.URI = "tcp://" + req.URI
+		}
 	}
 
 	// Test connection first
