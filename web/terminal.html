@@ -273,7 +273,8 @@
         // WebSocket Login
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         // USE WINDOW HOST NOT LOCALHOST TO SUPPORT REMOTE ACCESS IF HOSTED
-        const wsUrl = `${protocol}//${window.location.host}/api/containers/${containerId}/exec`;
+        const activeHostId = localStorage.getItem('activeHostId') || '1';
+        const wsUrl = `${protocol}//${window.location.host}/api/containers/${containerId}/exec?hostId=${activeHostId}`;
 
         let socket;
         let reconnectInterval;

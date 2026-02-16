@@ -21,6 +21,9 @@ var (
 func GetClient(r *http.Request) (*client.Client, error) {
 	hostIDStr := r.Header.Get("X-Docker-Host-ID")
 	if hostIDStr == "" {
+		hostIDStr = r.URL.Query().Get("hostId")
+	}
+	if hostIDStr == "" {
 		hostIDStr = "1"
 	}
 
