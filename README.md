@@ -32,6 +32,12 @@
 - **Troubleshooting Pintar:** Diskusikan masalah container Anda langsung dengan AI (OpenAI/Ollama).
 - **Context-Aware:** Chatbot otomatis membaca log dan status container untuk memberikan solusi yang relevan.
 
+### ⚖️ Load Balancer (Traefik)
+- **Reverse Proxy Otomatis:** Route custom domain (test.com, api.myapp.com) ke container Anda dengan mudah.
+- **Multi-Host Support:** Load balance ke container di server lokal maupun remote VM/VPS.
+- **Auto-Configuration:** Sistem otomatis mendeteksi IP host dan published port, kemudian generate config Traefik.
+- **Zero Downtime Update:** Setiap penambahan/penghapusan route akan otomatis reload Traefik tanpa restart manual.
+- **Real-time Status:** Dashboard menampilkan status Traefik (Running/Stopped) dan lokasi containernya.
 
 
 ### 🛠️ Manajemen Resource Lainnya
@@ -158,6 +164,133 @@ Docker Manager kini dilengkapi dengan asisten AI untuk membantu troubleshooting.
 4.  **Save Settings** untuk menyimpan konfigurasi.
 
 *Catatan: API Key disimpan secara aman di database lokal aplikasi Anda.*
+
+## ⚖️ Setup Load Balancer dengan Traefik
+
+Docker Manager menyediakan fitur Load Balancer terintegrasi menggunakan **Traefik v2.10** untuk routing otomatis dari custom domain ke container Anda.
+
+![Load Balancer Dashboard](web/image4.png)
+
+### 🎯 Cara Kerja
+
+Sistem ini bekerja dengan cara:
+1. **Traefik Container** berjalan sebagai reverse proxy yang mendengarkan di port 80 (HTTP).
+2. Anda menambahkan **Route** yang memetakan domain (misal: `test123.com`) ke container tertentu.
+3. Sistem otomatis:
+   - Mendeteksi apakah container ada di **local** atau **remote host**
+   - Mengambil **published port** dari container
+   - Generate konfigurasi Traefik (`traefik_dynamic.yml`)
+   - Reload Traefik tanpa downtime
+
+### 📋 Langkah Setup
+
+#### 1. Start Traefik Container
+
+1. Buka menu **Load Balancer** di sidebar.
+2. Klik tombol **"Start Traefik"**.
+3. Pilih host tempat Traefik akan berjalan (biasanya **Local**).
+4. Sistem akan otomatis:
+   - Pull image `traefik:v2.10` (jika belum ada)
+   - Create Docker volume `traefik-config`
+   - Deploy container Traefik dengan port mapping:
+     - **Port 80** → HTTP entry point
+     - **Port 8081** → Traefik Dashboard
+
+#### 2. Add Route (Mapping Domain ke Container)
+
+1. Klik tombol **"Add Route"**.
+2. Isi form:
+   - **Domain Name**: Domain yang ingin digunakan (contoh: `test123.com`, `api.myapp.com`)
+   - **Select Host**: Pilih host tempat container target berada
+   - **Select Container**: Pilih container tujuan dari dropdown
+   - **Internal Port**: Port akan otomatis terisi (private port container)
+3. Klik **"Add Route"**.
+
+Sistem akan otomatis:
+- Generate konfigurasi Traefik
+- Copy config ke Traefik container
+- Restart Traefik untuk apply perubahan
+
+#### 3. Setup DNS/Hosts File
+
+Agar domain bisa diakses dari browser, tambahkan entry di file hosts:
+
+**Windows:**
+1. Buka Notepad as Administrator
+2. Edit file: `C:\Windows\System32\drivers\etc\hosts`
+3. Tambahkan baris:
+   ```
+   127.0.0.1    test123.com
+   127.0.0.1    api.myapp.com
+   ```
+4. Save file
+
+**Linux/Mac:**
+```bash
+sudo nano /etc/hosts
+
+# Tambahkan:
+127.0.0.1    test123.com
+127.0.0.1    api.myapp.com
+```
+
+#### 4. Akses Domain
+
+Setelah setup selesai, buka browser dan akses:
+```
+http://test123.com
+```
+
+Traffic akan otomatis di-route ke container yang sudah Anda konfigurasi! 🎉
+
+### 🔍 Monitoring
+
+Dashboard Load Balancer menampilkan:
+- **Status Traefik Container**:
+  - Location (host mana Traefik berjalan)
+  - Container ID
+  - Status (Up/Down)
+  - Port mappings
+- **Active Routes**:
+  - Domain (clickable link)
+  - Target container & port
+  - Host location
+
+### 🌐 Remote Container Support
+
+Sistem secara pintar mendeteksi routing:
+
+**Scenario 1: Container di Local Host**
+```
+Domain: app.local → Container: nginx (Local)
+Traefik Config: http://host.docker.internal:8080
+```
+
+**Scenario 2: Container di Remote Host**
+```
+Domain: api.myapp.com → Container: backend (VM1 - 192.168.56.111)
+Traefik Config: http://192.168.56.111:8080
+```
+
+Sistem otomatis menggunakan **IP host + published port** untuk remote containers!
+
+### 🛠️ Troubleshooting
+
+**1. Domain tidak bisa diakses (404)**
+- ✅ Pastikan Traefik container running
+- ✅ Check file hosts sudah ditambahkan
+- ✅ Verifikasi route sudah ter-create di dashboard
+- ✅ Test langsung dengan header: `curl -H "Host: test123.com" http://localhost/`
+
+**2. Traefik Dashboard**
+- Akses: `http://localhost:8081/dashboard/`
+- Lihat routers dan services yang ter-configure
+
+**3. Container target tidak respond**
+- Check container target dalam status running
+- Verifikasi port mapping sudah benar
+- Test akses langsung: `curl http://HOST_IP:PUBLISHED_PORT`
+
 
 ## 🔐 Single Sign-On (SSO) Configuration
 

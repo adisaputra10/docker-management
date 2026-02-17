@@ -150,6 +150,25 @@ func InitDB() error {
 		return err
 	}
 
+	// Create load_balancer_routes table
+	queryRoutes := `
+	CREATE TABLE IF NOT EXISTS load_balancer_routes (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		domain TEXT NOT NULL,
+		host_id INTEGER,
+		container_name TEXT, 
+		container_port INTEGER,
+		manual_ip TEXT,
+		manual_port INTEGER,
+		target_type TEXT CHECK(target_type IN ('container', 'manual')),
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(host_id) REFERENCES docker_hosts(id) ON DELETE SET NULL
+	);
+	`
+	if _, err = DB.Exec(queryRoutes); err != nil {
+		return err
+	}
+
 	// Insert default Local host if not exists
 	var count int
 	if err := DB.QueryRow("SELECT COUNT(*) FROM docker_hosts").Scan(&count); err == nil && count == 0 {

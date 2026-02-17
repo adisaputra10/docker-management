@@ -79,6 +79,7 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/hosts/create", createHost).Methods("POST")
 	api.HandleFunc("/hosts/{id}", removeHost).Methods("DELETE")
 	api.HandleFunc("/hosts/{id}/inspect", inspectHost).Methods("GET")
+	api.HandleFunc("/hosts/{id}/containers", GetHostContainers).Methods("GET")
 
 	// Chat / AI
 	// Handler functions are defined in chat.go (same package)
@@ -89,6 +90,13 @@ func NewRouter() *mux.Router {
 	// SSO
 	api.HandleFunc("/settings/sso", GetSSOSettings).Methods("GET")
 	api.HandleFunc("/settings/sso", SaveSSOSettings).Methods("POST")
+
+	// Load Balancer
+	api.HandleFunc("/lb/routes", ListLBRoutes).Methods("GET")
+	api.HandleFunc("/lb/routes", AddLBRoute).Methods("POST")
+	api.HandleFunc("/lb/routes/{id}", DeleteLBRoute).Methods("DELETE")
+	api.HandleFunc("/lb/setup", StartTraefik).Methods("POST")
+	api.HandleFunc("/lb/status", GetTraefikStatus).Methods("GET")
 
 	return r
 }

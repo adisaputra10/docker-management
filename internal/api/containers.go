@@ -415,3 +415,33 @@ func removeContainer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"status": "removed"})
 }
+
+// GetHostContainers returns containers for a specific host by ID
+func GetHostContainers(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	hostIDStr := vars["id"]
+	hostID, err := strconv.Atoi(hostIDStr)
+	if err != nil {
+		http.Error(w, "Invalid host ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get Docker client for this specific host
+	cli, err := GetClientByHostID(hostID)
+	if err != nil {
+		http.Error(w, "Failed to connect to host: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// List all containers
+	containers, err := cli.ContainerList(context.Background(), container.ListOptions{
+		All: true,
+	})
+	if err != nil {
+		http.Error(w, "Failed to list containers: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(containers)
+}

@@ -1,0 +1,17 @@
+http:
+  routers:
+    rt-7:
+      rule: "Host(`test123.com`)"
+      service: "svc-7"
+    rt-11:
+      rule: "Host(`test1234.com`)"
+      service: "svc-11"
+  services:
+    svc-7:
+      loadBalancer:
+        servers:
+          - url: "http://host.docker.internal:8181"
+    svc-11:
+      loadBalancer:
+        servers:
+          - url: "http://192.168.56.111:8080"
