@@ -274,7 +274,8 @@
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         // USE WINDOW HOST NOT LOCALHOST TO SUPPORT REMOTE ACCESS IF HOSTED
         const activeHostId = localStorage.getItem('activeHostId') || '1';
-        const wsUrl = `${protocol}//${window.location.host}/api/containers/${containerId}/exec?hostId=${activeHostId}`;
+        const token = localStorage.getItem('authToken') || '';
+        const wsUrl = `${protocol}//${window.location.host}/api/containers/${containerId}/exec?hostId=${activeHostId}&token=${token}`;
 
         let socket;
         let reconnectInterval;

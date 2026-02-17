@@ -27,6 +27,7 @@ function closeModal() {
 
 async function refreshVolumes() {
     const volumesList = document.getElementById('volumes-list');
+    if (!volumesList) return;
     volumesList.innerHTML = '<div class="loading">Loading volumes...</div>';
 
     try {
@@ -34,7 +35,8 @@ async function refreshVolumes() {
         const volumes = await response.json();
 
         // Update stats
-        document.querySelector('#totalVolumes .stat-value').textContent = volumes.length || 0;
+        const statEl = document.querySelector('#totalVolumes .stat-value');
+        if (statEl) statEl.textContent = volumes.length || 0;
 
         if (volumes.length === 0) {
             volumesList.innerHTML = '<div class="empty-state">No volumes found</div>';
@@ -186,6 +188,7 @@ async function pruneVolumes() {
 
 async function refreshNetworks() {
     const networksList = document.getElementById('networks-list');
+    if (!networksList) return;
     networksList.innerHTML = '<div class="loading">Loading networks...</div>';
 
     try {
@@ -193,7 +196,8 @@ async function refreshNetworks() {
         const networks = await response.json();
 
         // Update stats
-        document.querySelector('#totalNetworks .stat-value').textContent = networks.length || 0;
+        const statEl = document.querySelector('#totalNetworks .stat-value');
+        if (statEl) statEl.textContent = networks.length || 0;
 
         if (networks.length === 0) {
             networksList.innerHTML = '<div class="empty-state">No networks found</div>';
@@ -357,7 +361,7 @@ async function pruneNetworks() {
 }
 
 // ===================
-// IMAGES - Extended
+// IMAGES
 // ===================
 
 function showPullImageModal() {
@@ -461,12 +465,10 @@ async function pruneImages() {
 }
 
 // ===================
-// CONTAINERS - Extended
+// CONTAINERS
 // ===================
 
 async function showCreateContainerModal() {
-    console.log('Opening new Create Container modal...');
-    // Show loading state first
     showModal('Create Container (New)', '<div class="loading">Loading details...</div>');
 
     try {
@@ -605,7 +607,7 @@ async function createContainer() {
 
         if (response.ok) {
             showToast('Container created successfully', 'success');
-            setTimeout(refreshContainers, 1000); // Wait a bit for Docker to register
+            setTimeout(refreshContainers, 1000);
         } else {
             const error = await response.text();
             showToast(`Failed to create container: ${error}`, 'error');
@@ -663,16 +665,31 @@ function formatBytes(bytes) {
 }
 
 // Update loadTabData to include new tabs
-const originalLoadTabData = window.loadTabData;
-window.loadTabData = function (tabName) {
-    switch (tabName) {
-        case 'volumes':
-            refreshVolumes();
-            break;
-        case 'networks':
-            refreshNetworks();
-            break;
-        default:
-            if (originalLoadTabData) originalLoadTabData(tabName);
-    }
-};
+// We hook into window.loadTabData if it exists (from app.js)
+// But crud.js loads BEFORE app.js.
+// So we cannot "hook" originalLoadTabData because it doesn't exist yet.
+// Instead, app.js should call specific refresh functions.
+// app.js loadTabData switch(tabName) already calls refreshContainers, refreshImages...
+// app.js defines refreshContainers etc ?
+// Step 1340: APP.JS contains refreshContainers, refreshImages!
+// So I duplicated them in crud.js?
+// No, Step 1340 app.js contains them.
+// So crud.js should NOT contain refreshContainers?
+// Step 1374 crud.js had refreshVolumes, refreshNetworks.
+// app.js had refreshContainers, refreshImages.
+// Separation of concerns:
+// app.js: Containers, Images, Logs, System.
+// crud.js: Volumes, Networks (and now I added Images/Containers CREATE/ACTIONS).
+// BUT I also added refreshImages in crud.js above?
+// If I have refreshImages in BOTH, the second one loaded wins.
+// app.js loads AFTER crud.js. So app.js wins.
+// So my refreshImages in crud.js is ignored.
+// That is fine.
+// But createContainer calls refreshContainers.
+// If app.js wins, createContainer calls app.js's refreshContainers.
+// Which is fine.
+
+// So:
+// crud.js adds functionality (Create/Inspect/Prune).
+// app.js provides Dashboard Refresh logic.
+// This works.

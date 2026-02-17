@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - Docker Manager</title>
+    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="modern_ui.css?v=3">
+    <script>
+        const token = localStorage.getItem('authToken');
+        const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+        if (!token || userData.role !== 'admin') {
+            window.location.href = '/';
+        }
+    </script>
+</head>
+
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <svg class="sidebar-logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="3" width="18" height="18" rx="2" />
+                    <line x1="12" y1="3" x2="12" y2="21" />
+                    <line x1="3" y1="12" x2="21" y2="12" />
+                </svg>
+                <span class="sidebar-title">Admin Panel</span>
+            </div>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+                <span class="nav-text">Back to Dashboard</span>
+            </a>
+            <div class="nav-section">
+                <div class="nav-section-title">Management</div>
+                <a href="#" class="nav-item active" onclick="showTab('users')">Users</a>
+                <a href="#" class="nav-item" onclick="showTab('projects')">Projects</a>
+                <a href="#" class="nav-item" onclick="showTab('sso')">SSO Settings</a>
+            </div>
+        </nav>
+    </aside>
+
+    <div class="main-wrapper">
+        <header class="header">
+            <div class="container">
+                <div class="header-content">
+                    <h1>Administration</h1>
+                    <div style="margin-left: auto;">
+                        <button onclick="logout()" class="btn btn-secondary">Sign Out</button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <div class="container">
+
+                <!-- Users Section -->
+                <div id="users-tab" class="tab-pane active">
+                    <div class="section-header">
+                        <h2>Users</h2>
+                        <button class="btn btn-success" onclick="showCreateUserModal()">+ Create User</button>
+                    </div>
+                    <div id="users-list"></div>
+                </div>
+
+                <!-- Projects Section -->
+                <div id="projects-tab" class="tab-pane" style="display: none;">
+
+                    <!-- View: List -->
+                    <div id="projects-view-list">
+                        <div class="section-header">
+                            <h2>Projects</h2>
+                            <button class="btn btn-success" onclick="showCreateProjectModal()">+ Create Project</button>
+                        </div>
+                        <div id="projects-list" class="cards-grid"></div>
+                    </div>
+
+                    <!-- View: Manage -->
+                    <div id="projects-view-manage" style="display: none;">
+                        <div class="section-header">
+                            <h2 id="manage-project-title">Manage Project</h2>
+                            <button class="btn btn-secondary" onclick="closeProjectManage()">Back</button>
+                        </div>
+                        <div id="manage-project-content" class="table-container" style="padding: 1.5rem;"></div>
+                    </div>
+                </div>
+
+                <!-- SSO Section -->
+                <div id="sso-tab" class="tab-pane" style="display: none;">
+                    <div class="section-header">
+                        <h2>SSO Settings</h2>
+                        <button class="btn btn-primary" onclick="saveSSOSettings()">Save Changes</button>
+                    </div>
+
+                    <!-- Standard Login -->
+                    <div class="card" style="margin-bottom: 1.5rem;">
+                        <div class="card-header">
+                            <h3 class="card-title">Standard Login</h3>
+                            <label class="switch">
+                                <input type="checkbox" id="standard-login-enabled">
+                                <span class="slider round"></span>
+                            </label>
+                        </div>
+                        <div class="card-body">
+                            <p style="color: #94a3b8; font-size: 0.9rem; margin: 0;">
+                                Enable or disable built-in username/password authentication.
+                                <strong style="color: #fca5a5; display: block; margin-top: 0.5rem;">⚠️ ensure an SSO
+                                    provider is configured before disabling to avoid lockout.</strong>
+                            </p>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; gap: 2rem;">
+                        <!-- GitLab -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">GitLab SSO</h3>
+                                <label class="switch">
+                                    <input type="checkbox" id="sso-gitlab-enabled">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Client ID</label>
+                                    <input type="text" id="sso-gitlab-client-id" class="form-input"
+                                        placeholder="Application ID">
+                                </div>
+                                <div class="form-group">
+                                    <label>Client Secret</label>
+                                    <input type="password" id="sso-gitlab-client-secret" class="form-input"
+                                        placeholder="Secret">
+                                </div>
+                                <div class="form-group">
+                                    <label>Redirect URI</label>
+                                    <input type="text" id="sso-gitlab-redirect-uri" class="form-input"
+                                        placeholder="https://your-domain.com/auth/gitlab/callback">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Entra ID -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">Microsoft Entra ID</h3>
+                                <label class="switch">
+                                    <input type="checkbox" id="sso-entra-enabled">
+                                    <span class="slider round"></span>
+                                </label>
+                            </div>
+                            <div class="card-body">
+                                <div class="form-group">
+                                    <label>Tenant ID</label>
+                                    <input type="text" id="sso-entra-tenant-id" class="form-input"
+                                        placeholder="Directory (tenant) ID">
+                                </div>
+                                <div class="form-group">
+                                    <label>Client ID</label>
+                                    <input type="text" id="sso-entra-client-id" class="form-input"
+                                        placeholder="Application (client) ID">
+                                </div>
+                                <div class="form-group">
+                                    <label>Client Secret</label>
+                                    <input type="password" id="sso-entra-client-secret" class="form-input"
+                                        placeholder="Client Secret">
+                                </div>
+                                <div class="form-group">
+                                    <label>Redirect URI</label>
+                                    <input type="text" id="sso-entra-redirect-uri" class="form-input"
+                                        placeholder="https://your-domain.com/auth/entra/callback">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals (Simplified for MVP, injected by JS usually but here structured) -->
+    <div id="modal-overlay" class="modal-overlay" onclick="closeModal()">
+        <div class="modal" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <h3 id="modal-title">Title</h3>
+                <button class="modal-close" onclick="closeModal()">×</button>
+            </div>
+            <div class="modal-body" id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <script src="crud.js?v=3"></script>
+    <script src="app.js?v=4"></script> <!-- Reusing Auth Interceptor -->
+    <script src="admin.js?v=9"></script>
+    <script>
+        function showTab(tab) {
+            document.querySelectorAll('.tab-pane').forEach(el => el.style.display = 'none');
+            document.getElementById(tab + '-tab').style.display = 'block';
+
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            // simple active toggle logic
+            if (tab === 'users') loadUsers();
+            if (tab === 'projects') loadProjects();
+            if (tab === 'sso') loadSSOSettings();
+        }
+        // Initial load
+        loadUsers();
+    </script>
+</body>
+
+</html>

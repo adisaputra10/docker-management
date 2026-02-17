@@ -8,6 +8,30 @@ func NewRouter() *mux.Router {
 	r := mux.NewRouter()
 	api := r.PathPrefix("/api").Subrouter()
 
+	// Middleware
+	api.Use(AuthMiddleware)
+
+	// Auth
+	api.HandleFunc("/auth/login", LoginHandler).Methods("POST")
+	api.HandleFunc("/auth/logout", LogoutHandler).Methods("POST")
+	api.HandleFunc("/auth/providers", GetAuthProviders).Methods("GET")
+
+	// Users
+	api.HandleFunc("/users", ListUsers).Methods("GET")
+	api.HandleFunc("/users", CreateUser).Methods("POST")
+	api.HandleFunc("/users/{id}", DeleteUser).Methods("DELETE")
+	api.HandleFunc("/users/{id}", UpdateUser).Methods("PUT")
+
+	// Projects
+	api.HandleFunc("/projects", ListProjects).Methods("GET")
+	api.HandleFunc("/projects", CreateProject).Methods("POST")
+	api.HandleFunc("/projects/{id}", DeleteProject).Methods("DELETE")
+	api.HandleFunc("/projects/{id}", GetProject).Methods("GET")
+	api.HandleFunc("/projects/assign_user", AssignUser).Methods("POST")
+	api.HandleFunc("/projects/assign_resource", AssignResource).Methods("POST")
+	api.HandleFunc("/projects/unassign_user", UnassignUser).Methods("POST")
+	api.HandleFunc("/projects/unassign_resource", UnassignResource).Methods("POST")
+
 	// Containers
 	api.HandleFunc("/containers", listContainers).Methods("GET")
 	api.HandleFunc("/containers/create", createContainer).Methods("POST")
@@ -61,6 +85,10 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/chat", handleChat).Methods("POST")
 	api.HandleFunc("/settings", getSettings).Methods("GET")
 	api.HandleFunc("/settings", saveSettings).Methods("POST")
+
+	// SSO
+	api.HandleFunc("/settings/sso", GetSSOSettings).Methods("GET")
+	api.HandleFunc("/settings/sso", SaveSSOSettings).Methods("POST")
 
 	return r
 }

@@ -6,10 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Docker Container Manager</title>
     <meta name="description" content="Powerful Docker container management interface with real-time monitoring">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=2">
 
-    <link rel="stylesheet" href="modern_ui.css">
+    <link rel="stylesheet" href="modern_ui.css?v=3">
     <link rel="stylesheet" href="chat.css">
+    <script>
+        if (!localStorage.getItem('authToken')) {
+            window.location.href = '/login.html';
+        }
+    </script>
 </head>
 
 <body>
@@ -126,6 +131,15 @@
                     <span id="sidebar-stopped">0</span> Stopped
                 </div>
             </div>
+            <button onclick="logout()" class="btn-icon-tiny"
+                style="width: 100%; margin-top: 1rem; border: 1px solid rgba(255,255,255,0.1); padding: 0.5rem; color: #94a3b8; cursor: pointer; border-radius: 0.375rem; background: transparent; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s;">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                    <polyline points="16 17 21 12 16 7"></polyline>
+                    <line x1="21" y1="12" x2="9" y2="12"></line>
+                </svg>
+                Sign Out
+            </button>
         </div>
     </aside>
 
@@ -437,9 +451,9 @@
         </div>
     </div>
 
-    <script src="crud.js?v=2"></script>
+    <script src="crud.js?v=3"></script>
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=4"></script>
     <script src="chat.js?v=1"></script>
 </body>
 

@@ -158,6 +158,52 @@ Docker Manager kini dilengkapi dengan asisten AI untuk membantu troubleshooting.
 4.  **Save Settings** untuk menyimpan konfigurasi.
 
 *Catatan: API Key disimpan secara aman di database lokal aplikasi Anda.*
+
+## 🔐 Single Sign-On (SSO) Configuration
+
+Docker Manager supports enterprise-grade authentication using **GitLab** and **Microsoft Entra ID**.
+
+### 1. GitLab SSO Setup
+1.  Navigate to your GitLab instance (or GitLab.com) -> **Settings** -> **Applications**.
+2.  Create a new application with the `read_user` scope.
+3.  Set the **Redirect URI** to: `http://your-server-ip:8080/auth/gitlab/callback` (adjust port/domain as needed).
+4.  Copy the **Application ID** and **Secret**.
+5.  In Docker Manager, go to **Admin Panel** -> **SSO Settings**.
+6.  Enable **GitLab SSO**, paste the credentials, and save.
+
+### 2. Microsoft Entra ID (Azure AD) Setup
+1.  Go to **Azure Portal** -> **App registrations** -> **New registration**.
+2.  Set the **Redirect URI** (Web) to: `http://your-server-ip:8080/auth/entra/callback`.
+3.  Copy the **Application (client) ID** and **Directory (tenant) ID**.
+4.  Generate a **Client Secret** in "Certificates & secrets".
+5.  In Docker Manager, go to **Admin Panel** -> **SSO Settings**.
+6.  Enable **Entra ID**, paste the credentials, and save.
+
+### ⚠️ Standard Login Toggle
+You can disable the default username/password login form to force SSO usage.
+- Go to **Admin Panel** -> **SSO Settings**.
+- Toggle **Standard Login** to OFF.
+- **Warning:** Ensure your SSO is working correctly before disabling this to avoid locking yourself out.
+
+## 👥 User Management & RBAC (Role-Based Access Control)
+
+The application implements a strict permission system to separate Administrators from Standard Users.
+
+### Roles and Permissions
+
+| Feature | 👑 Admin | 👤 User |
+| :--- | :---: | :---: |
+| **User Management** | Create, Edit, Delete Users | ❌ No Access |
+| **Project Management** | Create, Assign Users/Resources | View Assigned Projects Only |
+| **Docker Hosts** | Add, Connect, Delete Hosts | ❌ No Access |
+| **Containers** | Full Control (Start, Stop, Kill, Delete, Exec) | **Restart Only** (Assigned Containers) |
+| **SSO Settings** | Configure Providers | ❌ No Access |
+
+### How it Works
+1.  **Admins** create Projects (e.g., "Web App A") and assign specific Containers (Resources) to that Project.
+2.  **Admins** create Users and assign them to the Project.
+3.  **Users** log in and can *only* see the containers within their assigned projects. They are restricted to performing **safe actions** (Restart) to resolve issues without modifying infrastructure.
+
 ---
 
 *Dibuat dengan ❤️ untuk komunitas Docker.*

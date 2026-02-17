@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/adisaputra10/docker-management/internal/database"
@@ -33,18 +34,58 @@ func listContainers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Filter for RBAC
+	user, success := GetUserFromContext(r.Context())
+	allowedContainers := make(map[string]bool)
+	isAdmin := false
+	if success {
+		if user.Role == "admin" {
+			isAdmin = true
+		} else {
+			// Fetch allowed containers for this user and host
+			hostIDStr := r.Header.Get("X-Docker-Host-ID")
+			if hostIDStr == "" {
+				hostIDStr = "1"
+			}
+			hostID, _ := strconv.Atoi(hostIDStr)
+
+			rows, err := database.DB.Query(`
+				SELECT pr.resource_identifier 
+				FROM project_resources pr 
+				JOIN project_users pu ON pr.project_id = pu.project_id 
+				WHERE pu.user_id = ? AND pr.host_id = ?`, user.ID, hostID)
+
+			if err == nil {
+				defer rows.Close()
+				for rows.Next() {
+					var name string
+					if err := rows.Scan(&name); err == nil {
+						allowedContainers[name] = true
+					}
+				}
+			}
+		}
+	}
+
 	var containerInfos []models.ContainerInfo
 	for _, c := range containers {
+		name := ""
+		if len(c.Names) > 0 {
+			name = strings.TrimPrefix(c.Names[0], "/")
+		}
+
+		// Apply filter
+		if success && !isAdmin {
+			if !allowedContainers[name] {
+				continue
+			}
+		}
+
 		var ports []string
 		for _, port := range c.Ports {
 			if port.PublicPort != 0 {
 				ports = append(ports, fmt.Sprintf("%d:%d/%s", port.PublicPort, port.PrivatePort, port.Type))
 			}
-		}
-
-		name := ""
-		if len(c.Names) > 0 {
-			name = c.Names[0]
 		}
 
 		containerInfos = append(containerInfos, models.ContainerInfo{

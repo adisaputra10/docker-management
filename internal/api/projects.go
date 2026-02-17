@@ -1,0 +1,383 @@
+package api
+
+import (
+	"encoding/json"
+	"net/http"
+	"strconv"
+
+	"github.com/adisaputra10/docker-management/internal/database"
+	"github.com/gorilla/mux"
+)
+
+// --- User Management ---
+
+func ListUsers(w http.ResponseWriter, r *http.Request) {
+	// Verify Admin
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	rows, err := database.DB.Query("SELECT id, username, role, created_at FROM users")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var users []map[string]interface{}
+	for rows.Next() {
+		var u struct {
+			ID        int    `json:"id"`
+			Username  string `json:"username"`
+			Role      string `json:"role"`
+			CreatedAt string `json:"created_at"`
+		}
+		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &u.CreatedAt); err != nil {
+			continue
+		}
+		users = append(users, map[string]interface{}{
+			"id":         u.ID,
+			"username":   u.Username,
+			"role":       u.Role,
+			"created_at": u.CreatedAt,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
+}
+
+func CreateUser(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	hashed := hashPassword(req.Password) // defined in auth.go
+	_, err := database.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, hashed, req.Role)
+	if err != nil {
+		http.Error(w, "Error creating user (username might exist)", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func UpdateUser(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		Role     string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	var err error
+	if req.Password != "" {
+		hashed := hashPassword(req.Password)
+		_, err = database.DB.Exec("UPDATE users SET username = ?, password = ?, role = ? WHERE id = ?", req.Username, hashed, req.Role, id)
+	} else {
+		_, err = database.DB.Exec("UPDATE users SET username = ?, role = ? WHERE id = ?", req.Username, req.Role, id)
+	}
+
+	if err != nil {
+		http.Error(w, "Error updating user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func DeleteUser(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	vars := mux.Vars(r)
+	id := vars["id"]
+	database.DB.Exec("DELETE FROM users WHERE id = ?", id)
+	w.WriteHeader(http.StatusOK)
+}
+
+// --- Project Management ---
+
+type Project struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+func ListProjects(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	query := ""
+	args := []interface{}{}
+
+	if user.Role == "admin" {
+		query = "SELECT id, name, description FROM projects"
+	} else {
+		query = "SELECT p.id, p.name, p.description FROM projects p JOIN project_users pu ON p.id = pu.project_id WHERE pu.user_id = ?"
+		args = append(args, user.ID)
+	}
+
+	rows, err := database.DB.Query(query, args...)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var projects []Project
+	for rows.Next() {
+		var p Project
+		rows.Scan(&p.ID, &p.Name, &p.Description)
+		projects = append(projects, p)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(projects)
+}
+
+func CreateProject(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var req Project
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid body", http.StatusBadRequest)
+		return
+	}
+
+	_, err := database.DB.Exec("INSERT INTO projects (name, description) VALUES (?, ?)", req.Name, req.Description)
+	if err != nil {
+		http.Error(w, "Error creating project", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusCreated)
+}
+
+func DeleteProject(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	vars := mux.Vars(r)
+	database.DB.Exec("DELETE FROM projects WHERE id = ?", vars["id"])
+	w.WriteHeader(http.StatusOK)
+}
+
+// Assign User to Project
+func AssignUser(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	var req struct {
+		UserID    int `json:"user_id"`
+		ProjectID int `json:"project_id"`
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+	_, err := database.DB.Exec("INSERT OR IGNORE INTO project_users (user_id, project_id) VALUES (?, ?)", req.UserID, req.ProjectID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// Assign Resource (Container) to Project
+func AssignResource(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	var req struct {
+		ProjectID int    `json:"project_id"`
+		HostID    int    `json:"host_id"`
+		Resource  string `json:"resource_identifier"` // Container Name
+	}
+	json.NewDecoder(r.Body).Decode(&req)
+
+	// Default host if missing
+	if req.HostID == 0 {
+		req.HostID = 1
+	}
+
+	_, err := database.DB.Exec("INSERT OR IGNORE INTO project_resources (project_id, host_id, resource_identifier) VALUES (?, ?, ?)", req.ProjectID, req.HostID, req.Resource)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// Get Project Details (Resources + Users)
+func GetProject(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, _ := strconv.Atoi(vars["id"])
+
+	// Check access
+	user, success := GetUserFromContext(r.Context())
+	if !success {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	if user.Role != "admin" {
+		// Check assignment
+		var count int
+		database.DB.QueryRow("SELECT COUNT(*) FROM project_users WHERE project_id = ? AND user_id = ?", id, user.ID).Scan(&count)
+		if count == 0 {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+	}
+
+	// Fetch details
+	var p Project
+	err := database.DB.QueryRow("SELECT id, name, description FROM projects WHERE id = ?", id).Scan(&p.ID, &p.Name, &p.Description)
+	if err != nil {
+		http.Error(w, "Project not found", http.StatusNotFound)
+		return
+	}
+
+	// Fetch Users
+	userRows, _ := database.DB.Query("SELECT u.id, u.username FROM users u JOIN project_users pu ON u.id = pu.user_id WHERE pu.project_id = ?", id)
+	var users []map[string]interface{}
+	if userRows != nil {
+		for userRows.Next() {
+			var uid int
+			var uname string
+			userRows.Scan(&uid, &uname)
+			users = append(users, map[string]interface{}{"id": uid, "username": uname})
+		}
+		userRows.Close()
+	}
+
+	// Fetch Resources
+	resRows, _ := database.DB.Query(`
+		SELECT pr.host_id, pr.resource_identifier, dh.name 
+		FROM project_resources pr 
+		LEFT JOIN docker_hosts dh ON pr.host_id = dh.id 
+		WHERE pr.project_id = ?`, id)
+
+	var resources []map[string]interface{}
+	if resRows != nil {
+		for resRows.Next() {
+			var hid int
+			var rid string
+			var hname *string
+
+			err := resRows.Scan(&hid, &rid, &hname)
+			if err != nil {
+				continue
+			}
+
+			hostName := "Unknown"
+			if hname != nil {
+				hostName = *hname
+			}
+
+			resources = append(resources, map[string]interface{}{
+				"host_id":   hid,
+				"name":      rid,
+				"host_name": hostName,
+			})
+		}
+		resRows.Close()
+	}
+
+	resp := map[string]interface{}{
+		"project":   p,
+		"users":     users,
+		"resources": resources,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+func UnassignUser(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	var req struct {
+		UserID    int `json:"user_id"`
+		ProjectID int `json:"project_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	_, err := database.DB.Exec("DELETE FROM project_users WHERE user_id = ? AND project_id = ?", req.UserID, req.ProjectID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func UnassignResource(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	var req struct {
+		ProjectID int    `json:"project_id"`
+		HostID    int    `json:"host_id"`
+		Resource  string `json:"resource_identifier"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	if req.HostID == 0 {
+		req.HostID = 1
+	}
+
+	_, err := database.DB.Exec("DELETE FROM project_resources WHERE project_id = ? AND host_id = ? AND resource_identifier = ?", req.ProjectID, req.HostID, req.Resource)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}

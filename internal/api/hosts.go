@@ -54,8 +54,11 @@ func createHost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Normalize URI
+	// Normalize URI
 	if !strings.Contains(req.URI, "://") {
-		if strings.HasPrefix(req.URI, "/") || strings.HasPrefix(req.URI, ".") {
+		if strings.HasPrefix(req.URI, "//./pipe/") || strings.HasPrefix(req.URI, `\\.\pipe\`) {
+			req.URI = "npipe://" + req.URI
+		} else if strings.HasPrefix(req.URI, "/") || strings.HasPrefix(req.URI, ".") {
 			req.URI = "unix://" + req.URI
 		} else {
 			req.URI = "tcp://" + req.URI

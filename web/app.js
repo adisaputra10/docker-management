@@ -17,12 +17,33 @@ window.fetch = function (url, options) {
     // Add Host ID header
     const hostId = localStorage.getItem('activeHostId') || '1';
     if (!(options.headers instanceof Headers)) {
-        options.headers['X-Docker-Host-ID'] = hostId;
+        if (!options.headers['X-Docker-Host-ID']) {
+            options.headers['X-Docker-Host-ID'] = hostId;
+        }
     } else {
-        options.headers.append('X-Docker-Host-ID', hostId);
+        if (!options.headers.has('X-Docker-Host-ID')) {
+            options.headers.append('X-Docker-Host-ID', hostId);
+        }
     }
 
-    return originalFetch(url, options);
+    // Add Authorization Token
+    const token = localStorage.getItem('authToken');
+    if (token) {
+        if (!(options.headers instanceof Headers)) {
+            options.headers['Authorization'] = `Bearer ${token}`;
+        } else {
+            options.headers.append('Authorization', `Bearer ${token}`);
+        }
+    }
+
+    return originalFetch(url, options).then(response => {
+        if (response.status === 401 && !url.includes('/auth/login')) {
+            localStorage.removeItem('authToken');
+            localStorage.removeItem('userData');
+            window.location.href = '/login.html';
+        }
+        return response;
+    });
 };
 
 // ====================
@@ -82,7 +103,14 @@ function showAddHostModal(event) {
         <div class="form-group">
             <label for="host-uri">Connection URI</label>
             <input type="text" id="host-uri" placeholder="tcp://192.168.1.50:2375" required>
-            <small>Format: tcp://IP:PORT for remote, or unix:///path/to/socket for local</small>
+            <div style="font-size: 0.8rem; color: #94a3b8; margin-top: 0.25rem;">
+                Examples:
+                <ul style="padding-left: 1.2rem; margin: 0.25rem 0;">
+                    <li>Remote: <code>tcp://192.168.1.50:2375</code></li>
+                    <li>Linux Local: <code>unix:///var/run/docker.sock</code></li>
+                    <li>Windows Local: <code>npipe:////./pipe/docker_engine</code></li>
+                </ul>
+            </div>
         </div>
         <div class="modal-actions">
             <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -158,6 +186,31 @@ async function deleteHost(event, id, name) {
 
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
+    // Check Auth
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+        window.location.href = '/login.html';
+        return;
+    }
+
+    // Check Admin Role
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    if (userData.role === 'admin') {
+        const sidebarNav = document.querySelector('.sidebar-nav');
+        const adminSection = document.createElement('div');
+        adminSection.className = 'nav-section';
+        adminSection.innerHTML = `
+            <div class="nav-section-title">Administration</div>
+            <a href="/admin.html" class="nav-item">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+                </svg>
+                <span class="nav-text">Admin Panel</span>
+            </a>
+        `;
+        sidebarNav.appendChild(adminSection);
+    }
+
     fetchHosts();
     // Restore sidebar collapsed state
     const sidebar = document.getElementById('sidebar');
@@ -176,10 +229,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const activeTab = document.querySelector('.nav-item.active');
         if (activeTab) {
             const tabName = activeTab.getAttribute('data-tab');
-            loadTabData(tabName);
+            if (tabName) loadTabData(tabName);
         }
     }, 30000);
 });
+
+function logout() {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userData');
+    window.location.href = '/login.html';
+}
 
 // Toggle Sidebar
 function toggleSidebar() {
@@ -278,11 +337,20 @@ async function fetchStats() {
         const totalNetworks = networks.length;
 
         // Update header stats
-        document.querySelector('#totalContainers .stat-value').textContent = totalContainers;
-        document.querySelector('#runningContainers .stat-value').textContent = runningContainers;
-        document.querySelector('#totalImages .stat-value').textContent = totalImages;
-        document.querySelector('#totalVolumes .stat-value').textContent = totalVolumes;
-        document.querySelector('#totalNetworks .stat-value').textContent = totalNetworks;
+        const totalContainerEl = document.querySelector('#totalContainers .stat-value');
+        if (totalContainerEl) totalContainerEl.textContent = totalContainers;
+
+        const runningContainerEl = document.querySelector('#runningContainers .stat-value');
+        if (runningContainerEl) runningContainerEl.textContent = runningContainers;
+
+        const totalImagesEl = document.querySelector('#totalImages .stat-value');
+        if (totalImagesEl) totalImagesEl.textContent = totalImages;
+
+        const totalVolumesEl = document.querySelector('#totalVolumes .stat-value');
+        if (totalVolumesEl) totalVolumesEl.textContent = totalVolumes;
+
+        const totalNetworksEl = document.querySelector('#totalNetworks .stat-value');
+        if (totalNetworksEl) totalNetworksEl.textContent = totalNetworks;
 
         // Update sidebar
         updateSidebarBadges({
@@ -299,6 +367,7 @@ async function fetchStats() {
 // Containers
 async function refreshContainers() {
     const containersList = document.getElementById('containers-list');
+    if (!containersList) return;
     containersList.innerHTML = '<div class="loading">Loading containers...</div>';
 
     try {
@@ -470,6 +539,7 @@ function execContainer(id, name) {
 // Images
 async function refreshImages() {
     const imagesList = document.getElementById('images-list');
+    if (!imagesList) return;
     imagesList.innerHTML = '<div class="loading">Loading images...</div>';
 
     try {
@@ -522,6 +592,7 @@ async function refreshImages() {
 // Activity Logs
 async function refreshLogs() {
     const logsList = document.getElementById('logs-list');
+    if (!logsList) return;
     logsList.innerHTML = '<div class="loading">Loading logs...</div>';
 
     try {
@@ -569,6 +640,7 @@ async function refreshLogs() {
 // System Info
 async function refreshSystemInfo() {
     const systemInfo = document.getElementById('system-info');
+    if (!systemInfo) return;
     systemInfo.innerHTML = '<div class="loading">Loading system information...</div>';
 
     try {

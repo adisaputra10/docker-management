@@ -68,6 +68,88 @@ func InitDB() error {
 		return err
 	}
 
+	// Create users table
+	queryUsers := `
+	CREATE TABLE IF NOT EXISTS users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT UNIQUE NOT NULL,
+		password TEXT NOT NULL,
+		role TEXT NOT NULL CHECK(role IN ('admin', 'user')),
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = DB.Exec(queryUsers); err != nil {
+		return err
+	}
+
+	// Create projects table
+	queryProjects := `
+	CREATE TABLE IF NOT EXISTS projects (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT UNIQUE NOT NULL,
+		description TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = DB.Exec(queryProjects); err != nil {
+		return err
+	}
+
+	// Create project_allocations (Users -> Projects)
+	queryUserProjects := `
+	CREATE TABLE IF NOT EXISTS project_users (
+		project_id INTEGER,
+		user_id INTEGER,
+		PRIMARY KEY (project_id, user_id),
+		FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE,
+		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+	);
+	`
+	if _, err = DB.Exec(queryUserProjects); err != nil {
+		return err
+	}
+
+	// Create project_resources (Containers -> Projects)
+	// Storing identifier (Name) instead of ID because ID changes on recreation
+	queryProjectResources := `
+	CREATE TABLE IF NOT EXISTS project_resources (
+		project_id INTEGER,
+		host_id INTEGER,
+		resource_identifier TEXT NOT NULL, 
+		resource_type TEXT DEFAULT 'container',
+		PRIMARY KEY (project_id, host_id, resource_identifier),
+		FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+	);
+	`
+	if _, err = DB.Exec(queryProjectResources); err != nil {
+		return err
+	}
+
+	// Seed Default Admin (admin / admin)
+	// Using simple SHA256 for MVP portability (avoiding external deps like bcrypt for now)
+	// Hash of "admin" = 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+	querySeed := `
+	INSERT OR IGNORE INTO users (username, password, role) 
+	VALUES ('admin', '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918', 'admin');
+	`
+	if _, err = DB.Exec(querySeed); err != nil {
+		return err
+	}
+
+	// Create sessions table
+	querySessions := `
+	CREATE TABLE IF NOT EXISTS sessions (
+		token TEXT PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		role TEXT NOT NULL,
+		expires_at DATETIME NOT NULL,
+		FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+	);
+	`
+	if _, err = DB.Exec(querySessions); err != nil {
+		return err
+	}
+
 	// Insert default Local host if not exists
 	var count int
 	if err := DB.QueryRow("SELECT COUNT(*) FROM docker_hosts").Scan(&count); err == nil && count == 0 {
