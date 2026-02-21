@@ -45,12 +45,15 @@ async function loadUsers() {
                                     </td>
                                     <td style="color: #94a3b8;">${new Date(u.created_at).toLocaleDateString()}</td>
                                     <td>
-                                        <div class="action-btn-group">
+                                        <div class="action-btn-group" style="display:flex;gap:0.35rem;flex-wrap:wrap;">
+                                            <button class="btn btn-sm btn-primary" onclick="showNsAssignModal('${u.id}', '${u.username}')">
+                                                🔐 NS
+                                            </button>
                                             <button class="btn btn-sm btn-primary" onclick="showEditUserModal('${u.id}', '${u.username}', '${u.role}')">
-                                                Edit
+                                                ✏️ Edit
                                             </button>
                                             <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.username}')">
-                                                Delete
+                                                🗑️ Del
                                             </button>
                                         </div>
                                     </td>
@@ -520,5 +523,125 @@ async function saveSSOSettings() {
         }
     } catch (e) {
         showToast('Error saving settings', 'error');
+    }
+}
+
+// --- User Namespace Assignment ---
+async function showNsAssignModal(userId, username) {
+    // Fetch list of clusters
+    let clusters = [];
+    try {
+        const res = await fetch(`${API_BASE}/k0s/clusters`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
+        if (res.ok) {
+            const data = await res.json();
+            clusters = data.clusters || data.items || [];
+        }
+    } catch (e) {
+        console.error('Failed to fetch clusters:', e);
+    }
+
+    if (clusters.length === 0) {
+        showToast('No K0s clusters available', 'warning');
+        return;
+    }
+
+    let clusterOptions = clusters.map(c => 
+        `<option value="${c.id}">${c.name}</option>`
+    ).join('');
+
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-box" style="max-width: 500px;">
+            <div class="modal-header">
+                <div class="modal-title">🔐 Assign Namespaces — ${username}</div>
+                <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+            </div>
+            <div class="modal-body">
+                <div style="margin-bottom: 1rem;">
+                    <label style="font-size:0.85rem;color:#94a3b8;display:block;margin-bottom:0.35rem">Cluster</label>
+                    <select id="ns-cluster-select" onchange="loadClusterNamespaces()" style="width:100%;padding:0.5rem;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;font-size:0.85rem;cursor:pointer;">
+                        <option value="">-- Select a cluster --</option>
+                        ${clusterOptions}
+                    </select>
+                </div>
+                <div style="margin-bottom:1rem;">
+                    <label style="font-size:0.85rem;color:#94a3b8;display:block;margin-bottom:0.35rem">Namespaces (multi-select)</label>
+                    <div id="ns-list-container" style="background:#0f1117;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.75rem;min-height:120px;max-height:250px;overflow-y:auto;">
+                        <div style="color:#64748b;font-size:0.8rem;">Select a cluster first</div>
+                    </div>
+                </div>
+                <div style="display:flex;gap:0.5rem;">
+                    <button class="btn btn-primary" onclick="saveUserNamespaces('${userId}', '${username}')" style="flex:1;">✓ Save</button>
+                    <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex:1;">✕ Cancel</button>
+                </div>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    modal.classList.add('open');
+}
+
+async function loadClusterNamespaces() {
+    const clusterId = document.getElementById('ns-cluster-select').value;
+    if (!clusterId) {
+        document.getElementById('ns-list-container').innerHTML = '<div style="color:#64748b;font-size:0.8rem;">Select a cluster first</div>';
+        return;
+    }
+
+    try {
+        const res = await fetch(`${API_BASE}/k0s/clusters/${clusterId}/k8s/namespaces`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
+        const data = await res.json();
+        const namespaces = data.items || [];
+
+        let html = namespaces.map(ns => `
+            <label style="display:flex;align-items:center;gap:0.5rem;padding:0.4rem;cursor:pointer;border-radius:4px;margin-bottom:0.3rem;transition:background 0.2s;color:#e2e8f0;">
+                <input type="checkbox" class="ns-checkbox" value="${ns.metadata.name}" style="cursor:pointer;">
+                <span>${ns.metadata.name}</span>
+            </label>
+        `).join('');
+
+        document.getElementById('ns-list-container').innerHTML = html || '<div style="color:#64748b">No namespaces found</div>';
+    } catch (e) {
+        document.getElementById('ns-list-container').innerHTML = `<div style="color:#f87171">Error: ${e.message}</div>`;
+    }
+}
+
+async function saveUserNamespaces(userId, username) {
+    const clusterId = document.getElementById('ns-cluster-select').value;
+    if (!clusterId) {
+        showToast('Please select a cluster', 'warning');
+        return;
+    }
+
+    const selected = Array.from(document.querySelectorAll('.ns-checkbox:checked')).map(cb => cb.value);
+
+    try {
+        const res = await fetch(`${API_BASE}/users/${userId}/namespaces`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                cluster_id: parseInt(clusterId),
+                namespaces: selected
+            })
+        });
+
+        if (res.ok) {
+            showToast(`✓ Namespaces assigned to ${username}`, 'success');
+            document.querySelector('.modal-overlay').remove();
+        } else {
+            throw new Error('Failed to assign namespaces');
+        }
+    } catch (e) {
+        showToast(`Error: ${e.message}`, 'error');
+    }
+}
     }
 }

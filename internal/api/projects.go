@@ -66,14 +66,20 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hashed := hashPassword(req.Password) // defined in auth.go
-	_, err := database.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, hashed, req.Role)
-	if err != nil {
-		http.Error(w, "Error creating user (username might exist)", http.StatusInternalServerError)
+	if req.Username == "" || req.Password == "" {
+		http.Error(w, "Username and password are required", http.StatusBadRequest)
 		return
 	}
 
-	w.WriteHeader(http.StatusCreated)
+	hashed := hashPassword(req.Password) // defined in auth.go
+	_, err := database.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, hashed, req.Role)
+	if err != nil {
+		http.Error(w, "Error creating user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "User created successfully"})
 }
 
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -120,8 +126,29 @@ func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	}
 	vars := mux.Vars(r)
 	id := vars["id"]
-	database.DB.Exec("DELETE FROM users WHERE id = ?", id)
-	w.WriteHeader(http.StatusOK)
+
+	// Delete from user_namespaces first (foreign key constraint)
+	_, err := database.DB.Exec("DELETE FROM user_namespaces WHERE user_id = ?", id)
+	if err != nil {
+		http.Error(w, "Error deleting user namespace assignments: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Then delete from users
+	result, err := database.DB.Exec("DELETE FROM users WHERE id = ?", id)
+	if err != nil {
+		http.Error(w, "Error deleting user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil || rowsAffected == 0 {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "User deleted successfully"})
 }
 
 // --- Project Management ---
@@ -380,4 +407,154 @@ func UnassignResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// GetUserNamespaces returns namespaces assigned to a user for a specific cluster
+// GET /api/users/{id}/namespaces?cluster_id=123
+func GetUserNamespaces(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	userID := mux.Vars(r)["id"]
+	clusterID := r.URL.Query().Get("cluster_id")
+
+	if clusterID == "" {
+		http.Error(w, "cluster_id query parameter required", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := database.DB.Query(`
+		SELECT namespace 
+		FROM user_namespaces 
+		WHERE user_id = ? AND cluster_id = ?
+		ORDER BY namespace
+	`, userID, clusterID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var namespaces []string
+	for rows.Next() {
+		var ns string
+		if err := rows.Scan(&ns); err != nil {
+			continue
+		}
+		namespaces = append(namespaces, ns)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if namespaces == nil {
+		namespaces = []string{}
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"user_id":     userID,
+		"cluster_id":  clusterID,
+		"namespaces": namespaces,
+	})
+}
+
+// AssignUserNamespaces assigns/updates namespaces for a user in a cluster
+// POST /api/users/{id}/namespaces
+// body: {"cluster_id":1,"namespaces":["default","kube-system"]}
+func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	userID := mux.Vars(r)["id"]
+
+	var body struct {
+		ClusterID  int      `json:"cluster_id"`
+		Namespaces []string `json:"namespaces"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if body.ClusterID == 0 {
+		http.Error(w, "cluster_id required", http.StatusBadRequest)
+		return
+	}
+
+	// Start transaction
+	tx, err := database.DB.Begin()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Delete existing assignments for this user+cluster
+	if _, err := tx.Exec(
+		"DELETE FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
+		userID, body.ClusterID,
+	); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Insert new assignments
+	for _, ns := range body.Namespaces {
+		if ns != "" {
+			if _, err := tx.Exec(
+				"INSERT INTO user_namespaces (user_id, cluster_id, namespace) VALUES (?, ?, ?)",
+				userID, body.ClusterID, ns,
+			); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"user_id":     userID,
+		"cluster_id":  body.ClusterID,
+		"namespaces": body.Namespaces,
+	})
+}
+
+// RevokeUserNamespace removes namespace access from a user
+// DELETE /api/users/{id}/namespaces/{namespace}?cluster_id=1
+func RevokeUserNamespace(w http.ResponseWriter, r *http.Request) {
+	user, success := GetUserFromContext(r.Context())
+	if !success || user.Role != "admin" {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+	userID := vars["id"]
+	namespace := vars["namespace"]
+	clusterID := r.URL.Query().Get("cluster_id")
+
+	if clusterID == "" {
+		http.Error(w, "cluster_id query parameter required", http.StatusBadRequest)
+		return
+	}
+
+	_, err := database.DB.Exec(
+		"DELETE FROM user_namespaces WHERE user_id = ? AND cluster_id = ? AND namespace = ?",
+		userID, clusterID, namespace,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 }

@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Cluster Admin — Docker Manager</title>
+    <link rel="stylesheet" href="modern_ui.css"/>
+    <style>
+        :root {
+            --sidebar-w: 240px;
+            --topbar-h: 60px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg-primary, #0f1117);
+            color: var(--text-primary, #e2e8f0);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── TOP BAR ─────────────────────────────────── */
+        .topbar {
+            height: var(--topbar-h);
+            background: var(--bg-secondary, #1a1f2e);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            display: flex;
+            align-items: center;
+            padding: 0 1.5rem;
+            gap: 1rem;
+            flex-shrink: 0;
+            position: relative;
+        }
+        .topbar-back {
+            background: rgba(255,255,255,0.07);
+            border: none;
+            color: var(--text-primary, #e2e8f0);
+            padding: 0.45rem 1rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            display: flex; align-items: center; gap: 0.4rem;
+            transition: background 0.2s;
+        }
+        .topbar-back:hover { background: rgba(255,255,255,0.14); }
+        .topbar-divider { width: 1px; height: 28px; background: rgba(255,255,255,0.1); }
+        .topbar-title { font-size: 1.1rem; font-weight: 600; }
+        .topbar-badge {
+            font-size: 0.7rem; padding: 0.2rem 0.65rem; border-radius: 20px;
+            background: #22c55e22; color: #22c55e; border: 1px solid #22c55e44;
+            font-weight: 600; letter-spacing: 0.03em;
+        }
+        .topbar-badge.stopped { background: #ef444422; color: #ef4444; border-color: #ef444444; }
+        .topbar-stats {
+            margin-left: auto;
+            display: flex; gap: 1.5rem;
+        }
+        .topbar-stat { font-size: 0.8rem; color: var(--text-secondary, #94a3b8); }
+        .topbar-stat span { color: var(--text-primary, #e2e8f0); font-weight: 600; }
+
+        /* ── LAYOUT ──────────────────────────────────── */
+        .layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ── SIDEBAR ─────────────────────────────────── */
+        .sidebar {
+            width: var(--sidebar-w);
+            background: var(--bg-secondary, #1a1f2e);
+            border-right: 1px solid rgba(255,255,255,0.07);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .sidebar-section { padding: 1rem 0.75rem 0.5rem; }
+        .sidebar-label {
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.08em; color: var(--text-secondary, #64748b);
+            padding: 0 0.5rem; margin-bottom: 0.4rem;
+        }
+        .sidebar-ns-select {
+            width: 100%; padding: 0.55rem 0.75rem;
+            background: #1a1f2e;
+            border: 1px solid rgba(255,255,255,0.15);
+            color: #f1f5f9;
+            border-radius: 8px; font-size: 0.875rem; cursor: pointer;
+            outline: none;
+        }
+        .sidebar-ns-select:focus { border-color: #3b82f6; }
+        .sidebar-ns-select option {
+            background: #1a1f2e;
+            color: #f1f5f9;
+        }
+        /* Global option fix for all selects */
+        select option {
+            background: #1a1f2e;
+            color: #f1f5f9;
+        }
+
+        .nav-item {
+            display: flex; align-items: center; gap: 0.65rem;
+            padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer;
+            font-size: 0.875rem; font-weight: 500;
+            color: var(--text-secondary, #94a3b8);
+            transition: all 0.15s;
+            margin: 0 0.25rem;
+            user-select: none;
+        }
+        .nav-item:hover { background: rgba(255,255,255,0.06); color: var(--text-primary, #e2e8f0); }
+        .nav-item.active {
+            background: #3b82f618;
+            color: #60a5fa;
+            border: 1px solid #3b82f630;
+        }
+        .nav-item .nav-icon { font-size: 1rem; width: 20px; text-align: center; }
+        .nav-item .nav-count {
+            margin-left: auto; font-size: 0.7rem;
+            background: rgba(255,255,255,0.1); border-radius: 10px;
+            padding: 0.1rem 0.5rem; min-width: 22px; text-align: center;
+        }
+
+        /* ── MAIN ────────────────────────────────────── */
+        .main {
+            flex: 1; overflow: hidden;
+            display: flex; flex-direction: column;
+            background: var(--bg-primary, #0f1117);
+        }
+
+        .main-header {
+            padding: 1rem 1.5rem 0.75rem;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            display: flex; align-items: center; gap: 1rem; flex-shrink: 0;
+        }
+        .main-title { font-size: 1rem; font-weight: 600; }
+        .main-subtitle { font-size: 0.8rem; color: var(--text-secondary, #64748b); }
+        .main-actions { margin-left: auto; display: flex; gap: 0.5rem; }
+        .btn {
+            padding: 0.45rem 1rem; border: none; border-radius: 8px;
+            cursor: pointer; font-size: 0.8rem; font-weight: 500;
+            transition: all 0.15s; display: flex; align-items: center; gap: 0.4rem;
+        }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-ghost {
+            background: rgba(255,255,255,0.07); color: var(--text-primary, #e2e8f0);
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.12); }
+        .btn-danger { background: #dc262620; color: #f87171; border: 1px solid #dc262640; }
+        .btn-danger:hover { background: #dc262640; }
+
+        .main-content {
+            flex: 1; overflow-y: auto; padding: 1rem 1.5rem;
+        }
+
+        /* ── Table ───────────────────────────────────── */
+        .resource-table {
+            width: 100%; border-collapse: collapse; font-size: 0.85rem;
+        }
+        .resource-table th {
+            text-align: left; padding: 0.65rem 0.75rem;
+            font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.06em; color: var(--text-secondary, #64748b);
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            white-space: nowrap;
+        }
+        .resource-table td {
+            padding: 0.65rem 0.75rem;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            vertical-align: middle;
+            max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .resource-table tr:hover td { background: rgba(255,255,255,0.03); }
+
+        /* Status badges */
+        .badge {
+            display: inline-flex; align-items: center; gap: 0.3rem;
+            padding: 0.2rem 0.6rem; border-radius: 20px;
+            font-size: 0.7rem; font-weight: 600; white-space: nowrap;
+        }
+        .badge::before { content: '●'; font-size: 0.55rem; }
+        .badge-running, .badge-active, .badge-bound { background: #22c55e22; color: #22c55e; border: 1px solid #22c55e33; }
+        .badge-pending, .badge-initializing { background: #f59e0b22; color: #f59e0b; border: 1px solid #f59e0b33; }
+        .badge-failed, .badge-error, .badge-crashloopbackoff { background: #ef444422; color: #ef4444; border: 1px solid #ef444433; }
+        .badge-unknown, .badge-terminating { background: #64748b22; color: #94a3b8; border: 1px solid #64748b33; }
+        .badge-ready { background: #3b82f622; color: #60a5fa; border: 1px solid #3b82f633; }
+        .badge-completed { background: #6366f122; color: #a5b4fc; border: 1px solid #6366f133; }
+
+        /* ── Loading / Empty ─────────────────────────── */
+        .loading-state {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 1rem; padding: 4rem 2rem;
+            color: var(--text-secondary, #64748b);
+        }
+        .spinner {
+            width: 36px; height: 36px; border: 3px solid rgba(255,255,255,0.1);
+            border-top-color: #3b82f6; border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            display: flex; flex-direction: column; align-items: center;
+            gap: 0.75rem; padding: 4rem 2rem; color: var(--text-secondary, #64748b);
+            font-size: 0.9rem;
+        }
+        .empty-state .empty-icon { font-size: 2.5rem; }
+
+        /* ── Modal ───────────────────────────────────── */
+        .modal-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+            z-index: 1000; align-items: center; justify-content: center;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-box {
+            background: var(--bg-secondary, #1a1f2e);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px; width: 90%; max-width: 720px;
+            max-height: 85vh; display: flex; flex-direction: column;
+            overflow: hidden;
+        }
+        .modal-header {
+            padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.07);
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .modal-title { font-size: 1rem; font-weight: 600; }
+        .modal-close {
+            background: none; border: none; color: var(--text-secondary, #64748b);
+            font-size: 1.25rem; cursor: pointer; padding: 0.25rem;
+            border-radius: 6px; transition: all 0.15s;
+        }
+        .modal-close:hover { background: rgba(255,255,255,0.07); color: var(--text-primary); }
+        .modal-body {
+            padding: 1.25rem; overflow-y: auto; flex: 1;
+        }
+        .log-output {
+            font-family: 'Fira Mono', 'Consolas', 'JetBrains Mono', monospace;
+            font-size: 0.875rem; line-height: 1.7;
+            white-space: pre-wrap; word-break: break-all;
+            color: #e2e8f0;
+            background: #0d1117;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 1.25rem 1.5rem;
+            border-radius: 10px;
+            overflow-y: auto;
+            flex: 1;
+            min-height: 0;
+        }
+        .log-output.no-wrap { white-space: pre; word-break: normal; overflow-x: auto; }
+        .log-output .log-err  { color: #f87171; font-weight: 600; }
+        .log-output .log-warn { color: #fbbf24; }
+        .log-output .log-info { color: #67e8f9; }
+        .log-output .log-debug{ color: #64748b; }
+        .log-output .log-ts   { color: #818cf8; }
+        .log-output .log-ok   { color: #4ade80; }
+        .log-toolbar {
+            display: flex; align-items: center; gap: 0.5rem;
+            padding: 0.65rem 1.25rem;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            background: rgba(0,0,0,0.2);
+            flex-shrink: 0;
+        }
+        .log-toolbar select, .log-toolbar button {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #cbd5e1; border-radius: 6px;
+            padding: 0.25rem 0.65rem; font-size: 0.75rem; cursor: pointer;
+            transition: background 0.15s;
+        }
+        .log-toolbar select:hover, .log-toolbar button:hover { background: rgba(255,255,255,0.1); }
+        .log-toolbar .lbl { font-size: 0.72rem; color: #475569; margin-left: 0.25rem; }
+        .log-toolbar .spacer { flex: 1; }
+
+        /* ── Info cards ──────────────────────────────── */
+        .info-cards {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            gap: 0.75rem; margin-bottom: 1rem;
+        }
+        .info-card {
+            background: var(--bg-secondary, #1a1f2e);
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 10px; padding: 0.85rem 1rem;
+        }
+        .info-card-label { font-size: 0.7rem; color: var(--text-secondary, #64748b); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }
+        .info-card-value { font-size: 1.3rem; font-weight: 700; }
+
+        /* Node ready indicator */
+        .node-ready { color: #22c55e; }
+        .node-notready { color: #ef4444; }
+
+        /* ── ns tab pills ────────────────────────────── */
+        .ns-pills {
+            display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem;
+        }
+        .ns-pill {
+            padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.78rem;
+            cursor: pointer; border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(255,255,255,0.05); color: var(--text-secondary, #94a3b8);
+            transition: all 0.15s; font-weight: 500;
+        }
+        .ns-pill:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+        .ns-pill.active {
+            background: #3b82f620; color: #60a5fa;
+            border-color: #3b82f640;
+        }
+
+        /* scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+        /* Animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+    <button class="topbar-back" onclick="history.back()">← Back</button>
+    <div class="topbar-divider"></div>
+    <div>
+        <div class="topbar-title" id="cluster-name-title">Loading...</div>
+        <div style="font-size:0.7rem;color:#64748b;" id="cluster-ip-subtitle"></div>
+    </div>
+    <span class="topbar-badge" id="cluster-status-badge">•</span>
+    <div class="topbar-stats">
+        <div class="topbar-stat">Nodes: <span id="stat-nodes">—</span></div>
+        <div class="topbar-stat">Pods: <span id="stat-pods">—</span></div>
+        <div class="topbar-stat">Namespaces: <span id="stat-ns">—</span></div>
+    </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="layout">
+
+    <!-- SIDEBAR -->
+    <nav class="sidebar">
+        <!-- Namespace Selector -->
+        <div class="sidebar-section">
+            <div class="sidebar-label">Namespace</div>
+            <select class="sidebar-ns-select" id="ns-select" onchange="onNamespaceChange(this.value)">
+                <option value="all">All Namespaces</option>
+            </select>
+        </div>
+
+        <!-- Workloads -->
+        <div class="sidebar-section">
+            <div class="sidebar-label">Workloads</div>
+            <div class="nav-item active" data-resource="nodes" onclick="selectResource('nodes', this)">
+                <span class="nav-icon">🖥️</span> Nodes
+                <span class="nav-count" id="cnt-nodes">—</span>
+            </div>
+            <div class="nav-item" data-resource="deployments" onclick="selectResource('deployments', this)">
+                <span class="nav-icon">🚀</span> Deployments
+                <span class="nav-count" id="cnt-deployments">—</span>
+            </div>
+            <div class="nav-item" data-resource="pods" onclick="selectResource('pods', this)">
+                <span class="nav-icon">📦</span> Pods
+                <span class="nav-count" id="cnt-pods">—</span>
+            </div>
+            <div class="nav-item" data-resource="statefulsets" onclick="selectResource('statefulsets', this)">
+                <span class="nav-icon">🗄️</span> StatefulSets
+                <span class="nav-count" id="cnt-statefulsets">—</span>
+            </div>
+            <div class="nav-item" data-resource="daemonsets" onclick="selectResource('daemonsets', this)">
+                <span class="nav-icon">👾</span> DaemonSets
+                <span class="nav-count" id="cnt-daemonsets">—</span>
+            </div>
+            <div class="nav-item" data-resource="jobs" onclick="selectResource('jobs', this)">
+                <span class="nav-icon">⚙️</span> Jobs
+                <span class="nav-count" id="cnt-jobs">—</span>
+            </div>
+        </div>
+
+        <!-- Network -->
+        <div class="sidebar-section">
+            <div class="sidebar-label">Network</div>
+            <div class="nav-item" data-resource="services" onclick="selectResource('services', this)">
+                <span class="nav-icon">🔗</span> Services
+                <span class="nav-count" id="cnt-services">—</span>
+            </div>
+            <div class="nav-item" data-resource="ingresses" onclick="selectResource('ingresses', this)">
+                <span class="nav-icon">🌐</span> Ingresses
+                <span class="nav-count" id="cnt-ingresses">—</span>
+            </div>
+        </div>
+
+        <!-- Config -->
+        <div class="sidebar-section">
+            <div class="sidebar-label">Config</div>
+            <div class="nav-item" data-resource="configmaps" onclick="selectResource('configmaps', this)">
+                <span class="nav-icon">📄</span> ConfigMaps
+                <span class="nav-count" id="cnt-configmaps">—</span>
+            </div>
+            <div class="nav-item" data-resource="secrets" onclick="selectResource('secrets', this)">
+                <span class="nav-icon">🔑</span> Secrets
+                <span class="nav-count" id="cnt-secrets">—</span>
+            </div>
+            <div class="nav-item" data-resource="persistentvolumeclaims" onclick="selectResource('persistentvolumeclaims', this)">
+                <span class="nav-icon">💾</span> PVCs
+                <span class="nav-count" id="cnt-persistentvolumeclaims">—</span>
+            </div>
+        </div>
+
+        <!-- Cluster -->
+        <div class="sidebar-section" id="cluster-admin-section">
+            <div class="sidebar-label">Cluster</div>
+            <div class="nav-item" data-resource="namespaces" onclick="selectResource('namespaces', this)">
+                <span class="nav-icon">🏷️</span> Namespaces
+                <span class="nav-count" id="cnt-namespaces">—</span>
+            </div>
+            <div class="nav-item" data-resource="users" onclick="selectResource('users', this)">
+                <span class="nav-icon">👥</span> Users
+                <span class="nav-count" id="cnt-users">—</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <div class="main">
+        <div class="main-header">
+            <div>
+                <div class="main-title" id="resource-title">Nodes</div>
+                <div class="main-subtitle" id="resource-subtitle">All nodes in the cluster</div>
+            </div>
+            <div class="main-actions">
+                <button class="btn btn-ghost" onclick="refreshResource()">🔄 Refresh</button>
+            </div>
+        </div>
+        <div style="display:flex;flex:1;min-height:0">
+            <div class="main-content" id="main-content" style="flex:1;min-width:0">
+                <div class="loading-state"><div class="spinner"></div><div>Connecting to cluster...</div></div>
+            </div>
+        </div>
+        
+        <!-- DEPLOYMENT DETAIL SECTION - BOTTOM PANEL -->
+        <div id="deployment-detail-section" style="display:none;background:linear-gradient(180deg,#0f1117 0%,#111820 100%);border-top:2px solid rgba(59,130,246,0.3);padding:1rem 1.5rem;flex-shrink:0;max-height:280px;overflow-y:auto;box-shadow:0 -2px 20px rgba(0,0,0,0.3)">
+            <div style="display:grid;grid-template-columns:auto 1fr auto;gap:1rem;align-items:center;margin-bottom:1rem;border-bottom:1px solid rgba(59,130,246,0.2);padding-bottom:0.8rem">
+                <div style="font-size:0.9rem;font-weight:700;color:#3b82f6;display:flex;align-items:center;gap:0.5rem" id="dep-detail-title">
+                    <span>📦</span>
+                    <span id="dep-name-display">Deployment</span>
+                    <span style="color:#94a3b8;font-weight:500;font-size:0.85rem">in <span id="dep-ns-display">namespace</span></span>
+                </div>
+                <div style="display:grid;grid-template-columns:repeat(4,auto);gap:1.5rem;font-size:0.8rem;justify-self:center">
+                    <div>
+                        <div style="color:#94a3b8;font-size:0.7rem;margin-bottom:0.2rem">Ready</div>
+                        <div style="color:#10b981;font-weight:600" id="dep-det-replicas">-</div>
+                    </div>
+                    <div>
+                        <div style="color:#94a3b8;font-size:0.7rem;margin-bottom:0.2rem">Status</div>
+                        <div style="color:#10b981;font-weight:600" id="dep-det-status">-</div>
+                    </div>
+                </div>
+                <button onclick="closeDeploymentDetailSection()" style="background:none;border:none;color:#64748b;cursor:pointer;font-size:1.2rem;padding:0;transition:color 0.2s" onmouseover="this.style.color='#e2e8f0'" onmouseout="this.style.color='#64748b'">✕</button>
+            </div>
+            
+            <!-- Pods Table -->
+            <div style="overflow-x:auto">
+                <table id="pods-table" style="width:100%;border-collapse:collapse;font-size:0.85rem">
+                    <thead>
+                        <tr style="background:rgba(59,130,246,0.1);border-bottom:1px solid rgba(59,130,246,0.3)">
+                            <th style="padding:0.6rem;text-align:left;color:#94a3b8;font-weight:600;font-size:0.75rem">Status</th>
+                            <th style="padding:0.6rem;text-align:left;color:#94a3b8;font-weight:600;font-size:0.75rem">Pod Name</th>
+                            <th style="padding:0.6rem;text-align:left;color:#94a3b8;font-weight:600;font-size:0.75rem">Phase</th>
+                            <th style="padding:0.6rem;text-align:left;color:#94a3b8;font-weight:600;font-size:0.75rem">Restarts</th>
+                            <th style="padding:0.6rem;text-align:left;color:#94a3b8;font-weight:600;font-size:0.75rem">Age</th>
+                            <th style="padding:0.6rem;text-align:center;color:#94a3b8;font-weight:600;font-size:0.75rem">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pods-list-container">
+                        <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
+                            <td colspan="6" style="padding:1rem;text-align:center;color:#64748b">Loading pods...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- LOG MODAL -->
+<div class="modal-overlay" id="log-modal">
+    <div class="modal-box" style="max-width:1200px;width:96%;height:90vh;display:flex;flex-direction:column;">
+        <div class="modal-header">
+            <div class="modal-title" id="log-modal-title">Pod Logs</div>
+            <button class="modal-close" onclick="closeLogModal()">✕</button>
+        </div>
+        <!-- Toolbar -->
+        <div class="log-toolbar">
+            <span class="lbl">Lines:</span>
+            <select id="log-tail" onchange="reloadCurrentLog()">
+                <option value="100">100</option>
+                <option value="300">300</option>
+                <option value="500" selected>500</option>
+                <option value="1000">1000</option>
+                <option value="0">All</option>
+            </select>
+            <button onclick="toggleLogWrap()" id="log-wrap-btn" title="Toggle line wrap">↩ Wrap</button>
+            <button onclick="copyLogs()" title="Copy all logs">📋 Copy</button>
+            <button onclick="reloadCurrentLog()" title="Refresh logs">🔄 Refresh</button>
+            <span class="spacer"></span>
+            <span class="lbl" id="log-line-count"></span>
+        </div>
+        <div class="modal-body" style="padding:1rem;display:flex;flex-direction:column;min-height:0;flex:1;">
+            <div class="log-output" id="log-output">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<!-- NAMESPACE QUOTA MODAL -->
+<div class="modal-overlay" id="ns-quota-modal">
+    <div class="modal-box" style="max-width:520px;">
+        <div class="modal-header">
+            <div class="modal-title" id="ns-quota-title">📊 Resource Quota</div>
+            <button class="modal-close" onclick="closeNsQuotaModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:0.8rem;color:#64748b;margin:0 0 1rem">Set resource limits for namespace. Leave empty or enter <code style="background:#0f1117;padding:0.1rem 0.3rem;border-radius:4px;color:#94a3b8">0</code> for unlimited.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.85rem;">
+                <div>
+                    <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.35rem">CPU Request</label>
+                    <input id="q-cpu-req" type="text" placeholder="e.g. 500m, 1" autocomplete="off"
+                        style="width:100%;padding:0.5rem 0.7rem;background:#0f1117;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:8px;font-size:0.875rem;outline:none;box-sizing:border-box">
+                    <div style="font-size:0.68rem;color:#475569;margin-top:0.25rem">Total CPU requests allowed</div>
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.35rem">CPU Limit</label>
+                    <input id="q-cpu-lmt" type="text" placeholder="e.g. 2, 4" autocomplete="off"
+                        style="width:100%;padding:0.5rem 0.7rem;background:#0f1117;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:8px;font-size:0.875rem;outline:none;box-sizing:border-box">
+                    <div style="font-size:0.68rem;color:#475569;margin-top:0.25rem">Total CPU limits allowed</div>
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.35rem">Memory Request</label>
+                    <input id="q-mem-req" type="text" placeholder="e.g. 256Mi, 1Gi" autocomplete="off"
+                        style="width:100%;padding:0.5rem 0.7rem;background:#0f1117;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:8px;font-size:0.875rem;outline:none;box-sizing:border-box">
+                    <div style="font-size:0.68rem;color:#475569;margin-top:0.25rem">Total memory requests allowed</div>
+                </div>
+                <div>
+                    <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.35rem">Memory Limit</label>
+                    <input id="q-mem-lmt" type="text" placeholder="e.g. 512Mi, 2Gi" autocomplete="off"
+                        style="width:100%;padding:0.5rem 0.7rem;background:#0f1117;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:8px;font-size:0.875rem;outline:none;box-sizing:border-box">
+                    <div style="font-size:0.68rem;color:#475569;margin-top:0.25rem">Total memory limits allowed</div>
+                </div>
+            </div>
+            <div id="ns-quota-error" style="margin-top:0.75rem;font-size:0.8rem;color:#f87171;min-height:1.1em"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;margin-top:1rem">
+                <button class="btn btn-danger" style="font-size:0.78rem" onclick="submitNsQuota(true)">🗑️ Remove Quota</button>
+                <div style="display:flex;gap:0.5rem">
+                    <button class="btn btn-ghost" onclick="closeNsQuotaModal()">Cancel</button>
+                    <button class="btn btn-primary" id="ns-quota-submit" onclick="submitNsQuota(false)">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- POD DETAILS MODAL -->
+<div class="modal-overlay" id="pod-details-modal">
+    <div class="modal-box" style="max-width:900px;max-height:85vh;display:flex;flex-direction:column">
+        <div class="modal-header">
+            <div class="modal-title" id="pod-details-title">Pod Details</div>
+            <button class="modal-close" onclick="closePodDetailsModal()">✕</button>
+        </div>
+        <div class="modal-body" style="flex:1;overflow-y:auto;display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+            <div>
+                <div style="font-size:0.85rem;font-weight:600;color:#94a3b8;margin-bottom:0.5rem">📋 Description</div>
+                <pre id="pod-describe" style="background:#0f1117;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:0.75rem;font-size:0.75rem;color:#e2e8f0;overflow:auto;max-height:35vh;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+            </div>
+            <div>
+                <div style="font-size:0.85rem;font-weight:600;color:#94a3b8;margin-bottom:0.5rem">⚠️ Events</div>
+                <pre id="pod-events" style="background:#0f1117;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:0.75rem;font-size:0.75rem;color:#e2e8f0;overflow:auto;max-height:35vh;white-space:pre-wrap;word-break:break-word;margin:0"></pre>
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn btn-ghost" onclick="closePodDetailsModal()">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- DEPLOYMENT FORM MODAL -->
+<div class="modal-overlay" id="deployment-form-modal">
+    <div class="modal-box" style="max-width:600px">
+        <div class="modal-header">
+            <div class="modal-title">📦 Create Deployment</div>
+            <button class="modal-close" onclick="closeDeploymentFormModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div style="display:grid;gap:0.8rem">
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Deployment Name *</label>
+                    <input id="dep-name" type="text" placeholder="e.g. nginx-app" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Namespace *</label>
+                    <input id="dep-namespace" type="text" placeholder="default" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Docker Image *</label>
+                    <input id="dep-image" type="text" placeholder="nginx:latest" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Replicas</label>
+                    <input id="dep-replicas" type="number" value="1" min="1"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Container Port</label>
+                    <input id="dep-port" type="number" value="80" min="1" max="65535"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Label (app name)</label>
+                    <input id="dep-label" type="text" placeholder="auto-filled from deployment name" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:0.8rem;margin-top:0.8rem">
+                    <div style="font-size:0.75rem;color:#64748b;font-weight:600;margin-bottom:0.6rem">🔒 RESOURCE LIMITS</div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem">
+                        <div>
+                            <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.3rem">CPU Request</label>
+                            <input id="dep-cpu-req" type="text" value="100m" autocomplete="off"
+                                style="width:100%;padding:0.45rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:6px;outline:none;font-size:0.8rem">
+                            <div style="font-size:0.7rem;color:#64748b;margin-top:0.2rem">e.g. 100m, 500m, 1</div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.3rem">CPU Limit</label>
+                            <input id="dep-cpu-lim" type="text" value="100m" autocomplete="off"
+                                style="width:100%;padding:0.45rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:6px;outline:none;font-size:0.8rem">
+                            <div style="font-size:0.7rem;color:#64748b;margin-top:0.2rem">e.g. 100m, 500m, 1</div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Memory Request</label>
+                            <input id="dep-mem-req" type="text" value="128Mi" autocomplete="off"
+                                style="width:100%;padding:0.45rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:6px;outline:none;font-size:0.8rem">
+                            <div style="font-size:0.7rem;color:#64748b;margin-top:0.2rem">e.g. 128Mi, 256Mi, 1Gi</div>
+                        </div>
+                        <div>
+                            <label style="font-size:0.75rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Memory Limit</label>
+                            <input id="dep-mem-lim" type="text" value="128Mi" autocomplete="off"
+                                style="width:100%;padding:0.45rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:6px;outline:none;font-size:0.8rem">
+                            <div style="font-size:0.7rem;color:#64748b;margin-top:0.2rem">e.g. 128Mi, 256Mi, 1Gi</div>
+                        </div>
+                    </div>
+                </div>
+                <div id="deployment-form-error" style="font-size:0.8rem;color:#f87171;min-height:1.2em;white-space:pre-wrap"></div>
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn btn-ghost" onclick="closeDeploymentFormModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitDeploymentForm()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- SERVICE FORM MODAL -->
+<div class="modal-overlay" id="service-form-modal">
+    <div class="modal-box" style="max-width:600px">
+        <div class="modal-header">
+            <div class="modal-title">🔌 Create Service</div>
+            <button class="modal-close" onclick="closeServiceFormModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div style="display:grid;gap:0.8rem">
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Service Name *</label>
+                    <input id="svc-name" type="text" placeholder="e.g. nginx-service" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Namespace *</label>
+                    <input id="svc-namespace" type="text" placeholder="default" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Service Type</label>
+                    <select id="svc-type" style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                        <option value="ClusterIP">ClusterIP (Internal)</option>
+                        <option value="NodePort">NodePort (Node Port)</option>
+                        <option value="LoadBalancer">LoadBalancer (External)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">App Selector Label *</label>
+                    <input id="svc-selector" type="text" placeholder="e.g. nginx-app" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Port (Service Port) *</label>
+                    <input id="svc-port" type="number" value="80" min="1" max="65535"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Target Port *</label>
+                    <input id="svc-target-port" type="number" value="80" min="1" max="65535"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Protocol</label>
+                    <select id="svc-protocol" style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                        <option value="TCP">TCP</option>
+                        <option value="UDP">UDP</option>
+                    </select>
+                </div>
+                <div id="service-form-error" style="font-size:0.8rem;color:#f87171;min-height:1.2em;white-space:pre-wrap"></div>
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn btn-ghost" onclick="closeServiceFormModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitServiceForm()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- INGRESS FORM MODAL -->
+<div class="modal-overlay" id="ingress-form-modal">
+    <div class="modal-box" style="max-width:600px">
+        <div class="modal-header">
+            <div class="modal-title">🌐 Create Ingress</div>
+            <button class="modal-close" onclick="closeIngressFormModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div style="display:grid;gap:0.8rem">
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Ingress Name *</label>
+                    <input id="ing-name" type="text" placeholder="e.g. web-ingress" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Namespace *</label>
+                    <input id="ing-namespace" type="text" placeholder="default" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Hostname *</label>
+                    <input id="ing-hostname" type="text" placeholder="e.g. app.example.com" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Service Name *</label>
+                    <input id="ing-service" type="text" placeholder="e.g. nginx-service" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Service Port *</label>
+                    <input id="ing-port" type="number" value="80" min="1" max="65535"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Path (optional)</label>
+                    <input id="ing-path" type="text" placeholder="/" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div id="ingress-form-error" style="font-size:0.8rem;color:#f87171;min-height:1.2em;white-space:pre-wrap"></div>
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn btn-ghost" onclick="closeIngressFormModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitIngressForm()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- NAMESPACE CREATE MODAL -->
+<div class="modal-overlay" id="ns-create-modal">
+    <div class="modal-box" style="max-width:440px;">
+        <div class="modal-header">
+            <div class="modal-title">🏷️ Create Namespace</div>
+            <button class="modal-close" onclick="closeNsCreateModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.4rem">Namespace Name</label>
+            <input id="ns-create-name" type="text" placeholder="e.g. staging" autocomplete="off"
+                onkeydown="if(event.key==='Enter')submitNsCreate()"
+                style="width:100%;padding:0.55rem 0.75rem;background:#0f1117;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:8px;font-size:0.9rem;outline:none;box-sizing:border-box">
+            <div id="ns-create-error" style="margin-top:0.5rem;font-size:0.8rem;color:#f87171;min-height:1.1em"></div>
+            <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+                <button class="btn btn-ghost" onclick="closeNsCreateModal()">Cancel</button>
+                <button class="btn btn-primary" id="ns-create-submit" onclick="submitNsCreate()">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- COMMAND PREVIEW & APPROVAL MODAL -->
+<div class="modal-overlay" id="command-preview-modal">
+    <div class="modal-box" style="max-width:800px">
+        <div class="modal-header">
+            <div class="modal-title">⚠️ Review Command Before Execution</div>
+            <button class="modal-close" onclick="closeCommandPreviewModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <div style="margin-bottom:0.5rem">
+                <div style="font-size:0.8rem;font-weight:600;color:#94a3b8;margin-bottom:0.3rem">📋 Command to Execute:</div>
+                <pre id="command-preview-text" style="background:#0f1117;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:0.75rem;font-size:0.75rem;color:#10b981;overflow:auto;max-height:15vh;white-space:pre-wrap;word-break:break-word;margin:0;font-family:monospace"></pre>
+            </div>
+            <div>
+                <div style="font-size:0.8rem;font-weight:600;color:#94a3b8;margin-bottom:0.3rem">ℹ️ Description:</div>
+                <div id="command-preview-desc" style="background:#0f1117;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:0.75rem;font-size:0.8rem;color:#e2e8f0;max-height:10vh;overflow:auto"></div>
+            </div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+            <button class="btn btn-ghost" onclick="closeCommandPreviewModal()">❌ Reject</button>
+            <button class="btn btn-primary" id="cmd-approve-btn" onclick="approveAndExecuteCommand()" style="background:#10b981">✓ Approve & Execute</button>
+        </div>
+    </div>
+</div>
+
+<!-- CREATE MODAL -->
+<div class="modal-overlay" id="create-modal">
+    <div class="modal-box" style="max-width:780px;height:84vh;display:flex;flex-direction:column;">
+        <div class="modal-header">
+            <div class="modal-title" id="create-modal-title">➕ Create Resource</div>
+            <button class="modal-close" onclick="closeCreateModal()">✕</button>
+        </div>
+        <div class="modal-body" style="flex:1;display:flex;flex-direction:column;padding:1rem;overflow:hidden;">
+            <p style="font-size:0.8rem;color:#64748b;margin:0 0 0.6rem">Edit the YAML below then click <strong style="color:#60a5fa">Apply</strong>. Runs <code style="background:#0f1117;padding:0.1rem 0.35rem;border-radius:4px;color:#94a3b8;font-size:0.75rem">kubectl apply -f -</code> on the cluster.</p>
+            <textarea id="create-yaml-input"
+                onkeydown="if(event.key==='Tab'){event.preventDefault();var s=this.selectionStart;this.value=this.value.substring(0,s)+'  '+this.value.substring(this.selectionEnd);this.selectionStart=this.selectionEnd=s+2;}"
+                style="flex:1;width:100%;font-family:'Cascadia Code','Fira Mono','Consolas',monospace;font-size:0.82rem;line-height:1.6;background:#0f1117;color:#e2e8f0;border:1px solid rgba(255,255,255,0.12);border-radius:8px;padding:0.85rem;resize:none;outline:none;tab-size:2;box-sizing:border-box"></textarea>
+            <div id="create-modal-error" style="margin-top:0.5rem;font-size:0.8rem;color:#f87171;min-height:1.2em;white-space:pre-wrap"></div>
+            <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:0.75rem">
+                <button class="btn btn-ghost" onclick="closeCreateModal()">Cancel</button>
+                <button class="btn btn-primary" id="create-submit-btn" onclick="submitCreate()">Apply</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EXEC TERMINAL MODAL -->
+<div class="modal-overlay" id="exec-modal">
+    <div class="modal-box" style="max-width:920px;height:82vh;display:flex;flex-direction:column;">
+        <div class="modal-header">
+            <div class="modal-title" id="exec-modal-title">Pod Terminal</div>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-left:auto;">
+                <label style="font-size:0.75rem;color:#64748b;">Shell:</label>
+                <select id="exec-shell-select" style="background:#0f1117;color:#e2e8f0;border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:0.25rem 0.5rem;font-size:0.8rem;outline:none;">
+                    <option value="sh">sh</option>
+                    <option value="bash">bash</option>
+                    <option value="ash">ash</option>
+                    <option value="/bin/sh">/bin/sh</option>
+                    <option value="/bin/bash">/bin/bash</option>
+                    <option value="/bin/ash">/bin/ash</option>
+                </select>
+                <button class="btn btn-ghost" style="padding:0.25rem 0.6rem;font-size:0.75rem" onclick="reconnectExec()">🔄 Reconnect</button>
+            </div>
+            <button class="modal-close" style="margin-left:0.5rem" onclick="closeExecModal()">✕</button>
+        </div>
+        <div class="modal-body" style="flex:1;padding:0;overflow:hidden;background:#1e1e1e;border-radius:0 0 12px 12px;">
+            <div id="exec-terminal" style="width:100%;height:100%;"></div>
+        </div>
+    </div>
+</div>
+
+
+
+<!-- xterm.js -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+
+<script src="cluster-admin.js"></script>
+</body>
+</html>

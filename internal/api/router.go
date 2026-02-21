@@ -21,6 +21,10 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/users", CreateUser).Methods("POST")
 	api.HandleFunc("/users/{id}", DeleteUser).Methods("DELETE")
 	api.HandleFunc("/users/{id}", UpdateUser).Methods("PUT")
+	// User Namespaces (K8s cluster namespace assignments)
+	api.HandleFunc("/users/{id}/namespaces", GetUserNamespaces).Methods("GET")
+	api.HandleFunc("/users/{id}/namespaces", AssignUserNamespaces).Methods("POST")
+	api.HandleFunc("/users/{id}/namespaces/{namespace}", RevokeUserNamespace).Methods("DELETE")
 
 	// Projects
 	api.HandleFunc("/projects", ListProjects).Methods("GET")
@@ -97,6 +101,38 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/lb/routes/{id}", DeleteLBRoute).Methods("DELETE")
 	api.HandleFunc("/lb/setup", StartTraefik).Methods("POST")
 	api.HandleFunc("/lb/status", GetTraefikStatus).Methods("GET")
+
+	// K0s Kubernetes
+	api.HandleFunc("/k0s/clusters", ListK0sClusters).Methods("GET")
+	api.HandleFunc("/k0s/clusters", CreateK0sCluster).Methods("POST")
+	api.HandleFunc("/k0s/clusters/{id}", GetK0sCluster).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}", DeleteK0sCluster).Methods("DELETE")
+	api.HandleFunc("/k0s/clusters/{id}/workers", AddWorkerNode).Methods("POST")
+	api.HandleFunc("/k0s/clusters/{id}/workers/{nodeId}", DeleteWorkerNode).Methods("DELETE")
+	api.HandleFunc("/k0s/clusters/{id}/nodes", GetClusterNodes).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/kubeconfig", DownloadKubeconfig).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/kubeconfig-status", GetKubeconfigStatus).Methods("GET")
+	api.HandleFunc("/k0s/test-connection", TestK0sConnection).Methods("POST")
+	api.HandleFunc("/k0s/deploy", DeployOnK0s).Methods("POST")
+
+	// Cluster Admin - k8s resource management
+	api.HandleFunc("/k0s/clusters/{id}/k8s/info", GetClusterInfo).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/namespaces", GetClusterNamespaces).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/namespaces", CreateNamespace).Methods("POST")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/namespaces/{ns}", DeleteNamespaceResource).Methods("DELETE")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/namespaces/{ns}", UpdateNamespaceLabels).Methods("PATCH")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/namespaces/{ns}/quota", SetNamespaceQuota).Methods("POST")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/quotas", GetAllResourceQuotas).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/ns-usage", GetNamespacePodUsage).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/nodes", GetClusterNodes2).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/{resource}", GetClusterResources).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/{resource}/{name}", GetClusterResourceByName).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/{resource}/{name}", DeleteClusterResource).Methods("DELETE")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/pods/{name}/logs", GetResourceLogs).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/pods/{name}/describe", GetPodDescribe).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/pods/{name}/events", GetPodEvents).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/pods/{name}/exec", PodExec).Methods("GET") // WebSocket
+	api.HandleFunc("/k0s/clusters/{id}/k8s/apply", ApplyClusterResource).Methods("POST")
 
 	return r
 }

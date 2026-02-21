@@ -33,3 +33,32 @@ type DockerHost struct {
 	URI       string `json:"uri"`
 	CreatedAt string `json:"created_at"`
 }
+
+type K0sCluster struct {
+	ID          int    `json:"id"`
+	Name        string `json:"name"`
+	IPAddress   string `json:"ip_address"`
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	Status      string `json:"status"` // provisioning, running, stopped, failed
+	CreatedAt   string `json:"created_at"`
+	Version     string `json:"version,omitempty"`
+	NodeCount   int    `json:"node_count"`
+	Type        string `json:"type"` // "controller" or "worker"
+}
+
+type K0sClusterRequest struct {
+	Name       string `json:"name"`
+	IP         string `json:"ip"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	AuthMethod string `json:"authMethod"`
+	SSHKey     string `json:"sshKey"`
+	Type       string `json:"type"` // "controller" or "worker", default "controller"
+}
+
+type K0sProvisioningResult struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Error   string `json:"error,omitempty"`
+}

@@ -6,9 +6,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Docker Container Manager</title>
     <meta name="description" content="Powerful Docker container management interface with real-time monitoring">
-    <link rel="stylesheet" href="style.css?v=2">
+    <link rel="stylesheet" href="style.css?v=3">
 
-    <link rel="stylesheet" href="modern_ui.css?v=3">
+    <link rel="stylesheet" href="modern_ui.css?v=4">
     <link rel="stylesheet" href="chat.css">
     <script>
         if (!localStorage.getItem('authToken')) {
@@ -82,6 +82,14 @@
 
             <div class="nav-section">
                 <div class="nav-section-title">Monitoring</div>
+                <a href="#" class="nav-item" data-tab="projects" onclick="switchTab(event, 'projects')">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect>
+                        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+                    </svg>
+                    <span class="nav-text">Projects</span>
+                    <span class="nav-badge" id="nav-projects-count">0</span>
+                </a>
                 <a href="#" class="nav-item" data-tab="logs" onclick="switchTab(event, 'logs')">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -105,6 +113,14 @@
                     </svg>
                     <span class="nav-text">Load Balancer</span>
                     <span class="nav-badge" id="nav-lb-count">0</span>
+                </a>
+                <a href="#" class="nav-item" data-tab="k0s" onclick="switchTab(event, 'k0s')">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 2v20M2 12h20M7 7h10M7 17h10"/>
+                    </svg>
+                    <span class="nav-text">K0s Clusters</span>
+                    <span class="nav-badge" id="nav-k0s-count">0</span>
                 </a>
             </div>
 
@@ -423,6 +439,63 @@
                         </div>
                     </div>
 
+                    <!-- Projects Tab -->
+                    <div id="projects-tab" class="tab-pane">
+                        <div class="section-header">
+                            <h2>Projects & RBAC</h2>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn btn-success" onclick="showCreateProjectModal()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="5" x2="12" y2="19" />
+                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                    </svg>
+                                    New Project
+                                </button>
+                                <button class="btn btn-primary" onclick="refreshProjects()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path
+                                            d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                                    </svg>
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div id="projects-list" class="cards-grid">
+                            <div class="loading">Loading projects...</div>
+                        </div>
+                    </div>
+
+                    <!-- K0s Clusters Tab -->
+                    <div id="k0s-tab" class="tab-pane">
+                        <div class="section-header">
+                            <h2>K0s Kubernetes Clusters</h2>
+                            <div style="display: flex; gap: 0.75rem;">
+                                <button class="btn btn-success" onclick="showCreateK0sModal()">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <line x1="12" y1="5" x2="12" y2="19" />
+                                        <line x1="5" y1="12" x2="19" y2="12" />
+                                    </svg>
+                                    Create Cluster
+                                </button>
+                                <button class="btn" onclick="showImportK0sModal()" style="background: #6366f1; color: white; border: 1px solid #6366f1;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px;">
+                                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                        <polyline points="7 10 12 15 17 10"></polyline>
+                                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                                    </svg>
+                                    Import Cluster
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- K0s Details Section (Hidden by default) -->
+                        <div id="k0s-details-section" style="display: none; margin-bottom: 2rem; background: var(--section-bg, rgba(255,255,255,0.02)); border: 1px solid var(--border, rgba(255,255,255,0.1)); border-radius: var(--radius-lg, 0.75rem);"></div>
+
+                        <div id="k0s-clusters-container">
+                            <div class="loading">Loading clusters...</div>
+                        </div>
+                    </div>
+
                 </div>
             </div>
         </main>
@@ -563,11 +636,13 @@
         </div>
     </div>
 
-    <script src="crud.js?v=3"></script>
+    <script src="crud.js?v=4"></script>
 
-    <script src="app.js?v=4"></script>
-    <script src="chat.js?v=1"></script>
-    <script src="lb.js?v=1"></script>
+    <script src="app.js?v=5"></script>
+    <script src="chat.js?v=2"></script>
+    <script src="lb.js?v=2"></script>
+    <script src="k0s.js?v=3"></script>
+    <script src="projects.js?v=2"></script>
 </body>
 
 </html>
