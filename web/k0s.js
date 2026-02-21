@@ -1,6 +1,11 @@
 // K0s Kubernetes Management
 // ========================
 
+function isAdminUser() {
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    return userData.role === 'admin';
+}
+
 async function fetchK0sClusters() {
     try {
         const response = await fetch(`${API_BASE}/k0s/clusters`);
@@ -37,8 +42,10 @@ function displayK0sClusters(clusters) {
     const container = document.getElementById('k0s-clusters-container');
     if (!container) return;
 
+    const isAdmin = isAdminUser();
+
     if (!clusters || clusters.length === 0) {
-        container.innerHTML = `
+        let html = `
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4rem 2rem; text-align: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius-lg);">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 64px; height: 64px; margin-bottom: 1.5rem; color: var(--text-secondary); opacity: 0.6;">
                     <circle cx="12" cy="12" r="10" />
@@ -48,15 +55,49 @@ function displayK0sClusters(clusters) {
                 </svg>
                 <h3 style="margin: 0 0 0.5rem 0; color: var(--text-primary); font-size: 1.25rem;">No K0s Clusters Yet</h3>
                 <p style="margin: 0 0 1.5rem 0; color: var(--text-secondary); font-size: 0.95rem; max-width: 400px;">Create your first Kubernetes cluster to get started with k0s management.</p>
-                <button class="btn-primary" onclick="showCreateK0sModal()" style="background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: var(--radius-md); cursor: pointer; font-weight: 500; font-size: 0.95rem;">
-                    <span>+ Create Cluster</span>
-                </button>
-            </div>
         `;
+        
+        if (isAdmin) {
+            html += `<button class="btn-primary" onclick="showCreateK0sModal()" style="background: var(--primary); color: white; border: none; padding: 0.75rem 1.5rem; border-radius: var(--radius-md); cursor: pointer; font-weight: 500; font-size: 0.95rem;">
+                <span>+ Create Cluster</span>
+            </button>`;
+        }
+        
+        html += `</div>`;
+        container.innerHTML = html;
         return;
     }
 
-    container.innerHTML = clusters.map(cluster => `
+    let html = '';
+    clusters.forEach(cluster => {
+        // Button visibility based on role
+        let buttonsHtml = '';
+        
+        if (isAdmin) {
+            buttonsHtml += `<button onclick="showK0sDetails('${cluster.id}')" style="background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
+                📋 Details
+            </button>`;
+        }
+        
+        buttonsHtml += `<button onclick="enterCluster('${cluster.id}', '${cluster.name}')" style="background: #22c55e; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
+            🖥️ Masuk Cluster
+        </button>`;
+        
+        buttonsHtml += `<button onclick="downloadK0sKubeconfig('${cluster.id}', '${cluster.name}')" style="background: #8b5cf6; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
+            📥 Kubeconfig
+        </button>`;
+        
+        if (isAdmin) {
+            buttonsHtml += `<button onclick="showAddWorkerModal('${cluster.id}', '${cluster.name}')" style="background: #f59e0b; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
+                ➕ Add Worker
+            </button>`;
+            
+            buttonsHtml += `<button onclick="deleteK0sCluster('${cluster.id}', '${cluster.name}')" style="background: #dc2626; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
+                🗑️ Delete
+            </button>`;
+        }
+
+        html += `
         <div style="border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 1.5rem; margin-bottom: 1rem; background: var(--card-bg); transition: all 0.3s; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
             <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.25rem;">
                 <div style="flex: 1;">
@@ -82,24 +123,13 @@ function displayK0sClusters(clusters) {
             </div>
 
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                <button onclick="showK0sDetails('${cluster.id}')" style="background: #3b82f6; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
-                    📋 Details
-                </button>
-                <button onclick="enterCluster('${cluster.id}', '${cluster.name}')" style="background: #22c55e; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
-                    🖥️ Masuk Cluster
-                </button>
-                <button onclick="downloadK0sKubeconfig('${cluster.id}', '${cluster.name}')" style="background: #8b5cf6; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
-                    📥 Kubeconfig
-                </button>
-                <button onclick="showAddWorkerModal('${cluster.id}', '${cluster.name}')" style="background: #f59e0b; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
-                    ➕ Add Worker
-                </button>
-                <button onclick="deleteK0sCluster('${cluster.id}', '${cluster.name}')" style="background: #dc2626; color: white; border: none; padding: 0.5rem 1rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: all 0.2s;">
-                    🗑️ Delete
-                </button>
+                ${buttonsHtml}
             </div>
         </div>
-    `).join('');
+        `;
+    });
+    
+    container.innerHTML = html;
 }
 
 function showCreateK0sModal() {

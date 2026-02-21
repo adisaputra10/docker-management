@@ -7,18 +7,31 @@
 
 async function loadUsers() {
     const list = document.getElementById('users-list');
-    if (!list) return;
+    if (!list) {
+        console.error('users-list element not found');
+        return;
+    }
     list.innerHTML = '<div class="loading">Loading...</div>';
 
     try {
         const res = await fetch(`${API_BASE}/users`);
-        if (!res.ok) throw new Error('Failed to load users');
+        if (!res.ok) {
+            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
         const users = await res.json();
 
-        if (users.length === 0) {
-            list.innerHTML = '<div>No users found</div>';
+        if (!users || users.length === 0) {
+            list.innerHTML = '<div style="padding: 1rem; color: #94a3b8;">No users found</div>';
             return;
         }
+
+        const roleIcons = {
+            'admin': '👑 Admin',
+            'user_docker': '🐳 Docker Full',
+            'user_docker_basic': '🐳 Docker Basic',
+            'user_k8s_full': '☸️ K8s Full',
+            'user_k8s_view': '👁️ K8s View'
+        };
 
         list.innerHTML = `
             <div class="table-container">
@@ -40,15 +53,12 @@ async function loadUsers() {
                                     </td>
                                     <td>
                                         <span class="card-status ${u.role === 'admin' ? 'running' : 'stopped'}" style="width: fit-content;">
-                                            ${u.role}
+                                            ${roleIcons[u.role] || u.role}
                                         </span>
                                     </td>
                                     <td style="color: #94a3b8;">${new Date(u.created_at).toLocaleDateString()}</td>
                                     <td>
                                         <div class="action-btn-group" style="display:flex;gap:0.35rem;flex-wrap:wrap;">
-                                            <button class="btn btn-sm btn-primary" onclick="showNsAssignModal('${u.id}', '${u.username}')">
-                                                🔐 NS
-                                            </button>
                                             <button class="btn btn-sm btn-primary" onclick="showEditUserModal('${u.id}', '${u.username}', '${u.role}')">
                                                 ✏️ Edit
                                             </button>
@@ -65,7 +75,8 @@ async function loadUsers() {
             </div>
         `;
     } catch (e) {
-        list.innerHTML = `<div class="error">Error: ${e.message}</div>`;
+        console.error('Error loading users:', e);
+        list.innerHTML = `<div class="error" style="padding: 1rem; color: #ef4444;">Error: ${e.message}</div>`;
     }
 }
 
@@ -81,8 +92,11 @@ function showEditUserModal(id, username, role) {
             <input type="hidden" id="original-username" value="${username}"> 
             <!-- Prevent admin from locking themselves out if they are the only admin? UI doesn't handle complexity yet. -->
             <select id="edit-role" class="form-input">
-                <option value="user" ${role === 'user' ? 'selected' : ''}>User</option>
-                <option value="admin" ${role === 'admin' ? 'selected' : ''}>Admin</option>
+                <option value="admin" ${role === 'admin' ? 'selected' : ''}>👑 Admin</option>
+                <option value="user_docker" ${role === 'user_docker' ? 'selected' : ''}>🐳 Docker Full</option>
+                <option value="user_docker_basic" ${role === 'user_docker_basic' ? 'selected' : ''}>🐳 Docker Basic</option>
+                <option value="user_k8s_full" ${role === 'user_k8s_full' ? 'selected' : ''}>☸️ K8s Full</option>
+                <option value="user_k8s_view" ${role === 'user_k8s_view' ? 'selected' : ''}>👁️ K8s View</option>
             </select>
         </div>
          <div class="form-group">
@@ -147,8 +161,11 @@ function showCreateUserModal() {
         <div class="form-group">
             <label>Role</label>
             <select id="new-role" class="form-input">
-                <option value="user">User</option>
-                <option value="admin">Admin</option>
+                <option value="admin">👑 Admin</option>
+                <option value="user_docker">🐳 Docker Full</option>
+                <option value="user_docker_basic">🐳 Docker Basic</option>
+                <option value="user_k8s_full">☸️ K8s Full</option>
+                <option value="user_k8s_view">👁️ K8s View</option>
             </select>
         </div>
         <button class="btn btn-success" style="width: 100%;" onclick="submitCreateUser()">Create User</button>
@@ -194,9 +211,9 @@ async function loadProjects() {
     try {
         const res = await fetch(`${API_BASE}/projects`);
         if (!res.ok) throw new Error('Failed');
-        const projects = await res.json();
+        const projects = (await res.json()) || [];
 
-        if (projects.length === 0) {
+        if (!projects || projects.length === 0) {
             list.innerHTML = '<div>No projects found</div>';
             return;
         }
@@ -261,10 +278,18 @@ function closeProjectManage() {
 }
 
 async function manageProject(id) {
-    document.getElementById('projects-view-list').style.display = 'none';
+    // If we're on index.html (not admin.html), redirect to admin.html
+    const projectsViewList = document.getElementById('projects-view-list');
+    if (!projectsViewList) {
+        window.location.href = '/admin.html';
+        return;
+    }
+    projectsViewList.style.display = 'none';
     const manageView = document.getElementById('projects-view-manage');
+    if (!manageView) return;
     manageView.style.display = 'block';
     const content = document.getElementById('manage-project-content');
+    if (!content) return;
     content.innerHTML = '<div class="loading">Loading details...</div>';
 
     try {
@@ -272,7 +297,10 @@ async function manageProject(id) {
         if (!res.ok) throw new Error('Failed to load project');
         const data = await res.json();
 
-        document.getElementById('manage-project-title').textContent = `Manage: ${data.project.name}`;
+        const titleEl = document.getElementById('manage-project-title');
+        if (titleEl) {
+            titleEl.textContent = `Manage: ${data.project.name}`;
+        }
 
         const usersList = (data.users || []).map(u => `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border-bottom: 1px solid rgba(255,255,255,0.05);">
@@ -641,7 +669,5 @@ async function saveUserNamespaces(userId, username) {
         }
     } catch (e) {
         showToast(`Error: ${e.message}`, 'error');
-    }
-}
     }
 }

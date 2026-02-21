@@ -87,7 +87,7 @@ func InitDB() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT UNIQUE NOT NULL,
 		password TEXT NOT NULL,
-		role TEXT NOT NULL CHECK(role IN ('admin', 'user')),
+		role TEXT NOT NULL CHECK(role IN ('admin', 'user', 'user_docker', 'user_docker_basic', 'user_k8s_full', 'user_k8s_view')),
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	`
@@ -330,33 +330,22 @@ func SetSetting(key, value string) error {
 	return err
 }
 
-// migrateUsersRoleConstraint updates the users table CHECK constraint to include 'view' role
+// migrateUsersRoleConstraint updates the users table CHECK constraint to include all new roles
 func migrateUsersRoleConstraint() error {
-	// Check if users_new table already exists (indicates migration already done)
-	var tableExists string
-	err := DB.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='users_new'").Scan(&tableExists)
-	if err == nil {
-		// Migration already done, just drop the old backup
-		DB.Exec("DROP TABLE IF EXISTS users_old")
-		// Rename users_new to users if needed
-		if tableExists == "users_new" {
-			DB.Exec("DROP TABLE IF EXISTS users")
-			DB.Exec("ALTER TABLE users_new RENAME TO users")
-		}
-		return nil
-	}
-
-	// Check current CHECK constraint
+	// Check current CHECK constraint from schema
 	var sql string
-	err = DB.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").Scan(&sql)
+	err := DB.QueryRow("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").Scan(&sql)
 	if err != nil {
 		return err
 	}
 
-	// If constraint already includes 'view', we're done
-	if strings.Contains(sql, "'admin', 'user', 'view'") || strings.Contains(sql, "'view', 'user', 'admin'") {
+	// If constraint already has all new roles, we're done
+	if strings.Contains(sql, "'user_docker_basic'") {
+		log.Println("Users table already has updated role constraint")
 		return nil
 	}
+
+	log.Println("Migrating users table role constraint...")
 
 	// Begin transaction
 	tx, err := DB.Begin()
@@ -365,39 +354,48 @@ func migrateUsersRoleConstraint() error {
 	}
 	defer tx.Rollback()
 
-	// Rename old table
+	// Drop old backup if exists
+	tx.Exec("DROP TABLE IF EXISTS users_old")
+
+	// Rename current table
 	if _, err := tx.Exec("ALTER TABLE users RENAME TO users_old"); err != nil {
-		return err
+		return fmt.Errorf("failed to rename old users table: %v", err)
 	}
 
 	// Create new table with updated constraint
-	if _, err := tx.Exec(`
+	createSQL := `
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT UNIQUE NOT NULL,
 			password TEXT NOT NULL,
-			role TEXT NOT NULL CHECK(role IN ('admin', 'user', 'view')),
+			role TEXT NOT NULL CHECK(role IN ('admin', 'user', 'user_docker', 'user_docker_basic', 'user_k8s_full', 'user_k8s_view')),
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
-	`); err != nil {
-		return err
+	`
+	if _, err := tx.Exec(createSQL); err != nil {
+		return fmt.Errorf("failed to create new users table: %v", err)
 	}
 
-	// Copy data
+	// Copy all data from old table
 	if _, err := tx.Exec(`
 		INSERT INTO users (id, username, password, role, created_at)
 		SELECT id, username, password, role, created_at FROM users_old
 	`); err != nil {
-		return err
+		return fmt.Errorf("failed to copy users data: %v", err)
 	}
 
 	// Drop old table
 	if _, err := tx.Exec("DROP TABLE users_old"); err != nil {
-		return err
+		return fmt.Errorf("failed to drop old users table: %v", err)
 	}
 
 	// Commit transaction
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit migration: %v", err)
+	}
+
+	log.Println("Users table migration completed successfully")
+	return nil
 }
 
 func Close() {

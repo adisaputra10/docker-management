@@ -50,7 +50,12 @@ const state = {
 // ── Helper: Check if current user can create/delete (not view-only) ──
 function canUserCreateOrDelete() {
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-    return userData.role !== 'view';
+    const role = userData.role || 'user';
+    // Hide create/delete for view-only K8s users
+    if (role === 'user_k8s_view') {
+        return false;
+    }
+    return role !== 'view';
 }
 
 // ── Helper: Check if current user is admin ──
@@ -658,16 +663,14 @@ function renderNamespaces(items) {
 
 /* USERS */
 function renderUsers(items) {
-    const getRoleColor = (role) => {
-        if (role === 'admin') return { bg: '#3b82f6', text: '#3b82f6' };
-        if (role === 'view') return { bg: '#8b5cf6', text: '#8b5cf6' };
-        return { bg: '#64748b', text: '#94a3b8' };
-    };
     const rows = items.map(u => {
         const uid = u.id || '';
         const uname = (u.username || '').replace(/"/g, '&quot;');
         const urole = u.role || 'user';
-        const roleColor = getRoleColor(urole);
+        let roleColor = { bg: '#3b82f6', text: '#3b82f6' };
+        if (urole === 'view') roleColor = { bg: '#8b5cf6', text: '#8b5cf6' };
+        else if (urole !== 'admin') roleColor = { bg: '#64748b', text: '#94a3b8' };
+        
         return `
         <tr>
             <td><strong>${escapeHtml(u.username)}</strong></td>
@@ -675,20 +678,14 @@ function renderUsers(items) {
             <td style="color:#94a3b8;font-size:0.8rem">${u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
             <td>
                 <div style="display:flex;gap:0.3rem;flex-wrap:wrap;">
-                    <button class="btn btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick='showEditUserModal(${uid}, "${uname}", "${urole}")' title="Edit user">✏️ Edit</button>
                     <button class="btn btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick='showAssignNsModal(${uid}, "${uname}")' title="Assign namespaces">🔐 NS</button>
-                    <button class="btn btn-danger" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick='deleteUserConfirm(${uid}, "${uname}")' title="Delete user">🗑️ Del</button>
                 </div>
             </td>
         </tr>
         `;
     }).join('');
     
-    const toolbar = `<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:1rem;">
-        <button class="btn btn-primary" onclick="showCreateUserModal()" style="padding:0.5rem 1rem;">➕ New User</button>
-    </div>`;
-    
-    return toolbar + `<table class="resource-table">
+    return `<table class="resource-table">
         <thead><tr>
             <th>Username</th>
             <th>Role</th>
@@ -724,9 +721,11 @@ function showCreateUserModal() {
                     <div>
                         <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.35rem;">Role</label>
                         <select id="new-user-role" style="width:100%;padding:0.5rem;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;font-size:0.85rem;">
-                            <option value="user">user (full access)</option>
-                            <option value="view">view (read-only)</option>
-                            <option value="admin">admin (cluster admin)</option>
+                            <option value="admin">👤 admin (cluster admin)</option>
+                            <option value="user_docker">🐳 user_docker (full access)</option>
+                            <option value="user_docker_basic">🐳 user_docker_basic (basic access)</option>
+                            <option value="user_k8s_full">☸️ user_k8s_full (full access)</option>
+                            <option value="user_k8s_view">👁️ user_k8s_view (read-only)</option>
                         </select>
                     </div>
                     <div style="display:flex;gap:0.5rem;">
@@ -800,9 +799,11 @@ function showEditUserModal(userId, username, role) {
                     <div>
                         <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.35rem;">Role</label>
                         <select id="edit-user-role" style="width:100%;padding:0.5rem;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;font-size:0.85rem;">
-                            <option value="user" ${role === 'user' ? 'selected' : ''}>user (full access)</option>
-                            <option value="view" ${role === 'view' ? 'selected' : ''}>view (read-only)</option>
-                            <option value="admin" ${role === 'admin' ? 'selected' : ''}>admin (cluster admin)</option>
+                            <option value="admin" ${role === 'admin' ? 'selected' : ''}>👤 admin (cluster admin)</option>
+                            <option value="user_docker" ${role === 'user_docker' ? 'selected' : ''}>🐳 user_docker (full access)</option>
+                            <option value="user_docker_basic" ${role === 'user_docker_basic' ? 'selected' : ''}>🐳 user_docker_basic (basic access)</option>
+                            <option value="user_k8s_full" ${role === 'user_k8s_full' ? 'selected' : ''}>☸️ user_k8s_full (full access)</option>
+                            <option value="user_k8s_view" ${role === 'user_k8s_view' ? 'selected' : ''}>👁️ user_k8s_view (read-only)</option>
                         </select>
                     </div>
                     <div style="display:flex;gap:0.5rem;">

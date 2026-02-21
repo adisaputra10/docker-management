@@ -47,6 +47,108 @@ window.fetch = function (url, options) {
 };
 
 // ====================
+// ROLE-BASED MENU FILTERING
+// ====================
+
+function filterMenuByRole() {
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    const role = userData.role || 'user';
+
+    console.log('Filtering menu for role:', role);
+
+    // Determine if user is kubernetes-only or docker-only
+    const isKubernetesOnly = role.startsWith('user_k8s_');
+    const isDockerOnly = role.startsWith('user_docker');
+    const isAdmin = role === 'admin';
+
+    if (isKubernetesOnly) {
+        console.log('Kubernetes user - hiding docker menus, showing K0s only');
+        
+        // Hide docker resources section - find it by the first nav-section that contains "Resources"
+        const navSections = document.querySelectorAll('.nav-section');
+        navSections.forEach(section => {
+            const title = section.querySelector('.nav-section-title');
+            if (title && title.textContent === 'Resources') {
+                section.style.display = 'none'; // Hide entire Resources section
+            }
+        });
+
+        // Hide Monitoring section except K0s
+        navSections.forEach(section => {
+            const title = section.querySelector('.nav-section-title');
+            if (title && title.textContent === 'Monitoring') {
+                // Hide all items in Monitoring except K0s
+                const items = section.querySelectorAll('.nav-item');
+                items.forEach(item => {
+                    if (!item.hasAttribute('data-tab') || item.getAttribute('data-tab') !== 'k0s') {
+                        item.style.display = 'none';
+                    }
+                });
+            }
+        });
+
+    } else if (isDockerOnly) {
+        console.log('Docker user - hiding K0s menu');
+        
+        // Hide K0s menu
+        const k0sMenus = document.querySelectorAll('[data-tab="k0s"]');
+        k0sMenus.forEach(menu => {
+            menu.style.display = 'none';
+        });
+
+    } else if (isAdmin) {
+        console.log('Admin user - showing all menus');
+        // Admin sees everything - no filtering needed
+    }
+}
+
+// Call on page load
+document.addEventListener('DOMContentLoaded', () => {
+    filterMenuByRole();
+    hideK0sAdminButtonsIfNeeded();
+    hideDockerButtonsForK8sUsers();
+});
+
+function hideK0sAdminButtonsIfNeeded() {
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    const isAdmin = userData.role === 'admin';
+    
+    const adminButtonsDiv = document.getElementById('k0s-admin-buttons');
+    if (adminButtonsDiv && !isAdmin) {
+        adminButtonsDiv.style.display = 'none';
+    }
+}
+
+function hideDockerButtonsForK8sUsers() {
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    const role = userData.role || 'user';
+    const isK8sViewOnly = role === 'user_k8s_view';
+    
+    if (isK8sViewOnly) {
+        // For k8s_view role - hide only CREATE buttons (allow Prune and other actions)
+        const createContainerBtns = document.querySelectorAll('[onclick="showCreateContainerModal()"]');
+        createContainerBtns.forEach(btn => {
+            btn.style.display = 'none';
+        });
+        
+        const createVolumeBtns = document.querySelectorAll('[onclick="showCreateVolumeModal()"]');
+        createVolumeBtns.forEach(btn => {
+            btn.style.display = 'none';
+        });
+        
+        const createNetworkBtns = document.querySelectorAll('[onclick="showCreateNetworkModal()"]');
+        createNetworkBtns.forEach(btn => {
+            btn.style.display = 'none';
+        });
+        
+        const createProjectBtns = document.querySelectorAll('[onclick="showCreateProjectModal()"]');
+        createProjectBtns.forEach(btn => {
+            btn.style.display = 'none';
+        });
+    }
+}
+
+// ====================
 // HOST MANAGEMENT
 // ====================
 
@@ -254,6 +356,24 @@ function toggleSidebar() {
 function switchTab(event, tabName) {
     event.preventDefault();
 
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    const role = userData.role || 'user';
+
+    // Role-based access control for tabs
+    const isKubernetesOnly = role.startsWith('user_k8s_');
+    const isDockerOnly = role.startsWith('user_docker');
+
+    // Check if user has access to this tab
+    if (isKubernetesOnly && !tabName.includes('k0s')) {
+        console.warn('Kubernetes users can only access K0s Cluster menu');
+        return;
+    }
+    
+    if (isDockerOnly && tabName.includes('k0s')) {
+        console.warn('Docker users cannot access Kubernetes menus');
+        return;
+    }
+
     // Remove active from all nav items
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
@@ -297,6 +417,21 @@ function loadTabData(tabName) {
         case 'system':
             refreshSystemInfo();
             break;
+        case 'k0s':
+            if (typeof fetchK0sClusters === 'function') {
+                fetchK0sClusters();
+            }
+            break;
+        case 'projects':
+            if (typeof loadProjects === 'function') {
+                loadProjects();
+            }
+            break;
+        case 'loadbalancer':
+            if (typeof loadLoadBalancerDashboard === 'function') {
+                loadLoadBalancerDashboard();
+            }
+            break;
     }
 }
 
@@ -325,16 +460,16 @@ async function fetchStats() {
             fetch(`${API_BASE}/networks`)
         ]);
 
-        const containers = await containersRes.json();
-        const images = await imagesRes.json();
-        const volumes = await volumesRes.json();
-        const networks = await networksRes.json();
+        const containers = (await containersRes.json()) || [];
+        const images = (await imagesRes.json()) || [];
+        const volumes = (await volumesRes.json()) || [];
+        const networks = (await networksRes.json()) || [];
 
-        const totalContainers = containers.length;
-        const runningContainers = containers.filter(c => c.state === 'running').length;
-        const totalImages = images.length;
-        const totalVolumes = volumes.length;
-        const totalNetworks = networks.length;
+        const totalContainers = (containers && containers.length) || 0;
+        const runningContainers = (containers && containers.filter(c => c.state === 'running').length) || 0;
+        const totalImages = (images && images.length) || 0;
+        const totalVolumes = (volumes && volumes.length) || 0;
+        const totalNetworks = (networks && networks.length) || 0;
 
         // Update header stats
         const totalContainerEl = document.querySelector('#totalContainers .stat-value');
@@ -870,29 +1005,6 @@ function toggleSidebar() {
     // Save state to localStorage
     const isCollapsed = sidebar.classList.contains('collapsed');
     localStorage.setItem('sidebarCollapsed', isCollapsed);
-}
-
-function switchTab(event, tabName) {
-    event.preventDefault();
-
-    // Remove active from all nav items
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-    });
-
-    // Add active to clicked item
-    event.currentTarget.classList.add('active');
-
-    // Hide all tab panes
-    document.querySelectorAll('.tab-pane').forEach(pane => {
-        pane.classList.remove('active');
-    });
-
-    // Show selected tab pane
-    document.getElementById(tabName + '-tab').classList.add('active');
-
-    // Load tab data
-    loadTabData(tabName);
 }
 
 // Update sidebar badges

@@ -19,7 +19,7 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := database.DB.Query("SELECT id, username, role, created_at FROM users")
+	rows, err := database.DB.Query("SELECT id, username, role, created_at FROM users ORDER BY id")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -28,21 +28,22 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 
 	var users []map[string]interface{}
 	for rows.Next() {
-		var u struct {
-			ID        int    `json:"id"`
-			Username  string `json:"username"`
-			Role      string `json:"role"`
-			CreatedAt string `json:"created_at"`
-		}
-		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &u.CreatedAt); err != nil {
+		var id int
+		var username, role, createdAt string
+		if err := rows.Scan(&id, &username, &role, &createdAt); err != nil {
 			continue
 		}
 		users = append(users, map[string]interface{}{
-			"id":         u.ID,
-			"username":   u.Username,
-			"role":       u.Role,
-			"created_at": u.CreatedAt,
+			"id":         id,
+			"username":   username,
+			"role":       role,
+			"created_at": createdAt,
 		})
+	}
+
+	// Return empty array if no users instead of null
+	if users == nil {
+		users = []map[string]interface{}{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -68,6 +69,19 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	if req.Username == "" || req.Password == "" {
 		http.Error(w, "Username and password are required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate role
+	validRoles := map[string]bool{
+		"admin":               true,
+		"user_docker":         true,
+		"user_docker_basic":   true,
+		"user_k8s_full":       true,
+		"user_k8s_view":       true,
+	}
+	if !validRoles[req.Role] {
+		http.Error(w, "Invalid role. Must be: admin, user_docker, user_docker_basic, user_k8s_full, or user_k8s_view", http.StatusBadRequest)
 		return
 	}
 
@@ -99,6 +113,19 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+
+	// Validate role
+	validRoles := map[string]bool{
+		"admin":               true,
+		"user_docker":         true,
+		"user_docker_basic":   true,
+		"user_k8s_full":       true,
+		"user_k8s_view":       true,
+	}
+	if !validRoles[req.Role] {
+		http.Error(w, "Invalid role. Must be: admin, user_docker, user_docker_basic, user_k8s_full, or user_k8s_view", http.StatusBadRequest)
 		return
 	}
 
