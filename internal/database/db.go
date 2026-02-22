@@ -314,6 +314,11 @@ func InitDB() error {
 		return err
 	}
 
+	// Seed dummy scan reports if table is empty
+	if err := seedScanReports(); err != nil {
+		log.Printf("Warning: Failed to seed scan reports: %v", err)
+	}
+
 	// Migrate: add 'view' role to users table CHECK constraint
 	// SQLite doesn't support modifying CHECK constraints, so we recreate the table
 	err = migrateUsersRoleConstraint()
@@ -468,4 +473,103 @@ func Close() {
 	if DB != nil {
 		DB.Close()
 	}
+}
+
+func seedScanReports() error {
+	var count int
+	if err := DB.QueryRow("SELECT COUNT(*) FROM cicd_scan_reports").Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil // already seeded
+	}
+
+	type seed struct {
+		scanType, target, pipelineName, status, summary, resultJSON string
+		critical, high, medium, low, info                           int
+	}
+
+	seeds := []seed{
+		// Trivy
+		{
+			scanType: "trivy", target: "myapp:1.2.0", pipelineName: "frontend-ci", status: "findings",
+			summary:  "3 critical CVEs found in base image node:18-alpine",
+			critical: 3, high: 7, medium: 12, low: 21, info: 4,
+			resultJSON: `{"SchemaVersion":2,"ArtifactName":"myapp:1.2.0","Results":[{"Target":"myapp:1.2.0 (alpine 3.18.4)","Class":"os-pkgs","Type":"alpine","Vulnerabilities":[{"VulnerabilityID":"CVE-2023-5363","PkgName":"openssl","InstalledVersion":"3.1.3-r0","FixedVersion":"3.1.4-r0","Severity":"CRITICAL","Title":"Incorrect cipher key & IV length processing"},{"VulnerabilityID":"CVE-2023-5678","PkgName":"openssl","InstalledVersion":"3.1.3-r0","FixedVersion":"3.1.4-r0","Severity":"CRITICAL","Title":"Generating excessively long X9.42 DH keys"},{"VulnerabilityID":"CVE-2023-44487","PkgName":"nghttp2","InstalledVersion":"1.55.1-r0","FixedVersion":"1.57.0-r0","Severity":"CRITICAL","Title":"HTTP/2 Rapid Reset Attack"}]}]}`,
+		},
+		{
+			scanType: "trivy", target: "backend-api:2.0.1", pipelineName: "backend-ci", status: "findings",
+			summary:  "High severity vulnerabilities in golang.org/x/net",
+			critical: 0, high: 4, medium: 6, low: 9, info: 2,
+			resultJSON: `{"SchemaVersion":2,"ArtifactName":"backend-api:2.0.1","Results":[{"Target":"Go","Class":"lang-pkgs","Type":"gomod","Vulnerabilities":[{"VulnerabilityID":"CVE-2023-44487","PkgName":"golang.org/x/net","InstalledVersion":"0.10.0","FixedVersion":"0.17.0","Severity":"HIGH","Title":"HTTP/2 rapid reset can cause excessive work in net/http"},{"VulnerabilityID":"CVE-2023-39325","PkgName":"golang.org/x/net","InstalledVersion":"0.10.0","FixedVersion":"0.17.0","Severity":"HIGH","Title":"rapid stream resets can cause excessive work (CVE-2023-44487)"}]}]}`,
+		},
+		{
+			scanType: "trivy", target: "nginx:1.25.3", pipelineName: "infra-deploy", status: "clean",
+			summary: "No vulnerabilities found", critical: 0, high: 0, medium: 2, low: 5, info: 1,
+			resultJSON: `{"SchemaVersion":2,"ArtifactName":"nginx:1.25.3","Results":[{"Target":"nginx:1.25.3 (debian 12.2)","Class":"os-pkgs","Type":"debian","Vulnerabilities":[]}]}`,
+		},
+		// SBOM
+		{
+			scanType: "sbom", target: "myapp:1.2.0", pipelineName: "frontend-ci", status: "clean",
+			summary:  "SBOM generated: 312 components (npm), 0 license violations",
+			critical: 0, high: 0, medium: 0, low: 0, info: 0,
+			resultJSON: `{"bomFormat":"CycloneDX","specVersion":"1.4","serialNumber":"urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890","version":1,"metadata":{"timestamp":"2026-02-20T10:00:00Z","tools":[{"vendor":"aquasecurity","name":"trivy","version":"0.47.0"}],"component":{"type":"container","name":"myapp","version":"1.2.0"}},"components":[{"type":"library","name":"react","version":"18.2.0","purl":"pkg:npm/react@18.2.0"},{"type":"library","name":"axios","version":"1.5.0","purl":"pkg:npm/axios@1.5.0"},{"type":"library","name":"lodash","version":"4.17.21","purl":"pkg:npm/lodash@4.17.21"}]}`,
+		},
+		{
+			scanType: "sbom", target: "backend-api:2.0.1", pipelineName: "backend-ci", status: "findings",
+			summary:  "SBOM generated: 87 Go modules — 2 with restrictive licenses (GPL-3.0)",
+			critical: 0, high: 0, medium: 2, low: 0, info: 5,
+			resultJSON: `{"bomFormat":"CycloneDX","specVersion":"1.4","serialNumber":"urn:uuid:b2c3d4e5-f6a7-8901-bcde-f12345678901","version":1,"metadata":{"timestamp":"2026-02-20T11:30:00Z","component":{"type":"container","name":"backend-api","version":"2.0.1"}},"components":[{"type":"library","name":"github.com/gorilla/mux","version":"v1.8.0","purl":"pkg:golang/github.com/gorilla/mux@v1.8.0","licenses":[{"license":{"id":"BSD-3-Clause"}}]},{"type":"library","name":"github.com/some/gpl-lib","version":"v1.0.0","purl":"pkg:golang/github.com/some/gpl-lib@v1.0.0","licenses":[{"license":{"id":"GPL-3.0"}}]}]}`,
+		},
+		// Gitleaks
+		{
+			scanType: "gitleaks", target: "github.com/org/frontend", pipelineName: "frontend-ci", status: "findings",
+			summary:  "2 secrets detected: AWS key in .env.example, JWT secret in test config",
+			critical: 2, high: 0, medium: 0, low: 0, info: 0,
+			resultJSON: `[{"Description":"AWS Access Key","StartLine":12,"EndLine":12,"StartColumn":14,"EndColumn":34,"Match":"AKIAIOSFODNN7EXAMPLE","Secret":"AKIAIOSFODNN7EXAMPLE","File":".env.example","SymlinkFile":"","Commit":"a1b2c3d4","Entropy":3.8,"Author":"developer","Email":"dev@example.com","Date":"2026-02-15T08:30:00Z","Message":"add env example","Tags":["key"],"RuleID":"aws-access-key-id"},{"Description":"JWT Secret","StartLine":5,"EndLine":5,"StartColumn":18,"EndColumn":55,"Match":"my_super_secret_jwt_key_do_not_share","Secret":"my_super_secret_jwt_key_do_not_share","File":"config/test.yaml","Commit":"e5f6a7b8","Entropy":4.1,"Author":"developer","Email":"dev@example.com","Date":"2026-02-18T14:20:00Z","Message":"add test config","Tags":["secret"],"RuleID":"generic-api-key"}]`,
+		},
+		{
+			scanType: "gitleaks", target: "github.com/org/backend", pipelineName: "backend-ci", status: "clean",
+			summary:  "No secrets detected in repository history",
+			critical: 0, high: 0, medium: 0, low: 0, info: 0,
+			resultJSON: `[]`,
+		},
+		{
+			scanType: "gitleaks", target: "github.com/org/infra", pipelineName: "infra-deploy", status: "findings",
+			summary:  "1 private key found in legacy migration script",
+			critical: 1, high: 0, medium: 0, low: 0, info: 0,
+			resultJSON: `[{"Description":"RSA Private Key","StartLine":1,"EndLine":27,"StartColumn":1,"EndColumn":25,"Match":"-----BEGIN RSA PRIVATE KEY-----","Secret":"-----BEGIN RSA PRIVATE KEY-----\n...","File":"scripts/legacy/migrate.sh","Commit":"c3d4e5f6","Entropy":5.9,"Author":"infra-bot","Email":"infra@example.com","Date":"2025-11-01T09:00:00Z","Message":"old migration script","Tags":["key","private"],"RuleID":"private-key"}]`,
+		},
+		// Dependency Check
+		{
+			scanType: "dependency", target: "github.com/org/frontend", pipelineName: "frontend-ci", status: "findings",
+			summary:  "5 vulnerable npm packages: lodash (prototype pollution), moment (ReDoS)",
+			critical: 0, high: 2, medium: 3, low: 4, info: 1,
+			resultJSON: `{"reportSchema":"1.1","scanInfo":{"engineVersion":"9.0.7","dataSource":"https://nvd.nist.gov"},"projectInfo":{"name":"frontend","reportDate":"2026-02-20T12:00:00Z","credits":"OWASP Dependency-Check"},"dependencies":[{"fileName":"lodash-4.17.20.tgz","filePath":"node_modules/lodash","description":"Lodash","packages":[{"id":"pkg:npm/lodash@4.17.20"}],"vulnerabilities":[{"name":"CVE-2021-23337","cvssv3":{"baseScore":7.2,"baseSeverity":"HIGH"},"description":"Lodash versions prior to 4.17.21 are vulnerable to Command Injection via the template function.","severity":"HIGH"}]},{"fileName":"moment-2.29.3.tgz","filePath":"node_modules/moment","vulnerabilities":[{"name":"CVE-2022-24785","cvssv3":{"baseScore":7.5,"baseSeverity":"HIGH"},"description":"A path traversal vulnerability impacts npm (server-side) users of Moment.js.","severity":"HIGH"}]}]}`,
+		},
+		{
+			scanType: "dependency", target: "github.com/org/backend", pipelineName: "backend-ci", status: "clean",
+			summary:  "All Go modules up to date — no known vulnerabilities",
+			critical: 0, high: 0, medium: 0, low: 1, info: 3,
+			resultJSON: `{"reportSchema":"1.1","scanInfo":{"engineVersion":"9.0.7"},"projectInfo":{"name":"backend-go","reportDate":"2026-02-20T13:00:00Z"},"dependencies":[{"fileName":"go.sum","vulnerabilities":[]}]}`,
+		},
+	}
+
+	stmt, err := DB.Prepare(`INSERT INTO cicd_scan_reports
+		(scan_type, target, pipeline_name, status, critical, high, medium, low, info, summary, result_json, workspace_id)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+	if err != nil {
+		return err
+	}
+	defer stmt.Close()
+
+	for _, s := range seeds {
+		if _, err := stmt.Exec(s.scanType, s.target, s.pipelineName, s.status,
+			s.critical, s.high, s.medium, s.low, s.info,
+			s.summary, s.resultJSON, nil); err != nil {
+			log.Printf("seed scan: %v", err)
+		}
+	}
+	log.Println("Seeded dummy scan reports")
+	return nil
 }

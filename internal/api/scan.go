@@ -11,20 +11,20 @@ import (
 // ── Models ─────────────────────────────────────────────────────────────────
 
 type ScanReport struct {
-	ID           int    `json:"id"`
-	ScanType     string `json:"scan_type"`
-	Target       string `json:"target"`
-	PipelineID   string `json:"pipeline_id"`
-	PipelineName string `json:"pipeline_name"`
-	Status       string `json:"status"`
-	Critical     int    `json:"critical"`
-	High         int    `json:"high"`
-	Medium       int    `json:"medium"`
-	Low          int    `json:"low"`
-	Info         int    `json:"info"`
-	Summary      string `json:"summary"`
-	WorkspaceID  string `json:"workspace_id"`
-	CreatedAt    string `json:"created_at"`
+	ID           int     `json:"id"`
+	ScanType     string  `json:"scan_type"`
+	Target       string  `json:"target"`
+	PipelineID   *string `json:"pipeline_id"`
+	PipelineName *string `json:"pipeline_name"`
+	Status       string  `json:"status"`
+	Critical     int     `json:"critical"`
+	High         int     `json:"high"`
+	Medium       int     `json:"medium"`
+	Low          int     `json:"low"`
+	Info         int     `json:"info"`
+	Summary      *string `json:"summary"`
+	WorkspaceID  *string `json:"workspace_id"`
+	CreatedAt    string  `json:"created_at"`
 }
 
 type ScanReportRequest struct {
@@ -63,7 +63,7 @@ func ListScanReports(w http.ResponseWriter, r *http.Request) {
 	args := []interface{}{}
 
 	if wsID != "" {
-		query += " AND workspace_id = ?"
+		query += " AND (workspace_id = ? OR workspace_id IS NULL OR workspace_id = '')"
 		args = append(args, wsID)
 	}
 	if scanType != "" {

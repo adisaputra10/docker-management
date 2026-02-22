@@ -45,6 +45,68 @@
 - **Volumes:** Buat dan kelola Volume data persisten.
 - **Networks:** Atur konfigurasi jaringan Docker dengan mudah.
 
+### 🚀 CI/CD Pipeline Management
+![CI/CD Dashboard](web/cicd.png)
+
+Kelola end-to-end CI/CD pipeline dengan dashboard yang intuitif:
+- **Pipeline Creation:** Buat pipeline dengan repository, branch, build command, dan deploy command.
+- **Build Worker Support:** Pilih worker atau agent mana yang akan menjalankan build (local atau remote SSH worker).
+- **Registry Integration:** Push hasil build otomatis ke registry (Docker Hub, Harbor, ECR) dengan konfigurasi yang fleksibel.
+- **Security Scans:** Pilih security scan tools (Trivy, SBOM, Gitleaks, Dependency Check) untuk setiap pipeline.
+- **Build History:** Pantau riwayat build, status, dan durasi eksekusi.
+- **Multi-Workspace:** Isolasi pipeline per workspace/team dengan permission berbasis role.
+
+### 🔐 Security Scan Reports
+![Security Scan Dashboard](web/cicd-security.png)
+
+Integrasi comprehensive security scanning untuk container dan dependencies:
+
+**Fitur:**
+- **Scanner Support:** 4 jenis pemindaian terintegrasi:
+  - 🔍 **Trivy:** Container image vulnerability scanning (CVE detection)
+  - 📦 **SBOM:** Bill of Materials - track semua dependencies dalam aplikasi
+  - 🔑 **Gitleaks:** Secret detection - cari credentials/API keys yang accidentally committed
+  - 🧩 **Dependency Check:** Analisis dependency vulnerabilities (npm, pip, maven, dll)
+
+- **Severity Dashboard:** Visualisasi severity counts (Critical, High, Medium, Low, Info) per scan type.
+- **Detailed Reports:** Lihat detail penuh scan dengan:
+  - Target (image/repo yang di-scan)
+  - Pipeline association (linked ke CI/CD pipeline)
+  - Detailed findings & raw JSON output
+  - Scan status (Clean / Findings / Error)
+- **Multi-Tab Interface:** Switch antar scan type dengan satu klik.
+- **Add Report Modal:** Manual upload scan reports dari Trivy JSON, SBOM CycloneDX, atau tool lainnya.
+
+### ☸️ Kubernetes (K0s) Cluster Management
+![K0s Cluster Admin](web/k0s.png)
+
+Kelola Kubernetes cluster secara langsung dari Dashboard:
+
+**Deployment Management:**
+- **List Deployments:** Lihat semua deployment per namespace dengan status (Available, Ready pods).
+- **Pod Inspection:** Explore pods dalam setiap deployment - cek nama, status, restart count, age.
+- **Create/Edit:** Buat atau modifikasi deployment dengan YAML editor.
+- **Delete:** Hapus deployment dengan aman.
+
+**Node Management:**
+- **Cluster Nodes:** Lihat daftar nodes dengan info (name, status, ready state, node roles).
+- **Resource Capacity:** Monitor CPU, memory allocation dan usage.
+- **Node Details:** Inspect individual node untuk troubleshooting.
+
+**Scaling & Updates:**
+- **Scale Replicas:** Adjust jumlah replicas di deployment dengan mudah (scale up/down).
+- **Rolling Update:** Update deployment dengan strategy (readiness check, termination grace).
+- **Deployment History:** Track rollout history dan rollback ke versi sebelumnya jika diperlukan.
+
+**Service & Ingress:**
+- **Expose Services:** Create ClusterIP, NodePort, atau LoadBalancer services.
+- **Ingress Management:** Setup Ingress untuk HTTP/HTTPS routing ke services.
+- **DNS:** Kelola service discovery dan DNS resolution.
+
+**Namespaces & RBAC:**
+- **Multi-Namespace Support:** Switch antar namespace untuk isolasi resource.
+- **Workspace Integration:** K0s management terintegrasi dengan workspace/team permission system.
+
 ## 🛠️ Teknologi yang Digunakan
 
 - **Backend:** Go (Golang) - *Native net/http & Gorilla Mux*
