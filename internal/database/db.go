@@ -290,6 +290,30 @@ func InitDB() error {
 		return err
 	}
 
+	// Create cicd_scan_reports table
+	queryCicdScans := `
+	CREATE TABLE IF NOT EXISTS cicd_scan_reports (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		scan_type TEXT NOT NULL,
+		target TEXT NOT NULL,
+		pipeline_id TEXT,
+		pipeline_name TEXT,
+		status TEXT NOT NULL DEFAULT 'clean',
+		critical INTEGER NOT NULL DEFAULT 0,
+		high INTEGER NOT NULL DEFAULT 0,
+		medium INTEGER NOT NULL DEFAULT 0,
+		low INTEGER NOT NULL DEFAULT 0,
+		info INTEGER NOT NULL DEFAULT 0,
+		summary TEXT,
+		result_json TEXT,
+		workspace_id TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = DB.Exec(queryCicdScans); err != nil {
+		return err
+	}
+
 	// Migrate: add 'view' role to users table CHECK constraint
 	// SQLite doesn't support modifying CHECK constraints, so we recreate the table
 	err = migrateUsersRoleConstraint()

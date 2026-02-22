@@ -302,6 +302,10 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                 Deployments
             </button>
+            <button class="menu-item" id="menu-security" onclick="showSection('security')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Security Reports
+            </button>
             <button class="menu-item" id="menu-repos" onclick="showSection('repos')">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
                 Repositories
@@ -416,6 +420,32 @@
                     <div class="empty-state">
                         <div class="empty-icon">📦</div>
                         <div>No deployment records found.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECURITY SCAN REPORTS SECTION -->
+        <div id="section-security" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">🛡️ Security Scan Reports</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openScanModal()">+ Add Scan Report</button>
+                </div>
+                <!-- Tabs -->
+                <div style="display:flex;gap:8px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:8px">
+                    <button class="btn btn-sm" id="scan-tab-trivy"    onclick="switchScanTab('trivy')">🔍 Trivy</button>
+                    <button class="btn btn-sm" id="scan-tab-sbom"     onclick="switchScanTab('sbom')">📦 SBOM</button>
+                    <button class="btn btn-sm" id="scan-tab-gitleaks" onclick="switchScanTab('gitleaks')">🔑 Gitleaks</button>
+                    <button class="btn btn-sm" id="scan-tab-dependency" onclick="switchScanTab('dependency')">🧩 Dependency</button>
+                </div>
+                <!-- Summary bar -->
+                <div id="scan-summary-bar" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+                <!-- Table -->
+                <div id="security-body">
+                    <div class="empty-state">
+                        <div class="empty-icon">🛡️</div>
+                        <div>No scan reports found. Add a report to get started.</div>
                     </div>
                 </div>
             </div>
@@ -579,6 +609,87 @@ sudo apt-get update -y && sudo apt-get install -y git curl jq build-essential
             <button class="btn btn-ghost" onclick="closeWorkerModal()">Cancel</button>
             <button class="btn btn-ghost" id="wk-test-btn" onclick="testWorkerSSHDirect()">🔌 Test SSH</button>
             <button class="btn btn-primary" onclick="submitWorkerForm()">Add Worker</button>
+        </div>
+    </div>
+</div>
+
+<!-- SECURITY SCAN REPORT MODAL -->
+<div class="modal-overlay" id="scan-modal">
+    <div class="modal-box" style="max-width:600px">
+        <div class="modal-title">🛡️ Add Scan Report</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 1rem">
+            <div class="form-group">
+                <label class="form-label">Scan Tool *</label>
+                <select class="form-input" id="sc-type">
+                    <option value="trivy">🔍 Trivy (container image)</option>
+                    <option value="sbom">📦 SBOM</option>
+                    <option value="gitleaks">🔑 Gitleaks (secrets)</option>
+                    <option value="dependency">🧩 Dependency Check</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-input" id="sc-status">
+                    <option value="clean">✅ Clean</option>
+                    <option value="findings">⚠️ Findings</option>
+                    <option value="error">❌ Error</option>
+                </select>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+                <label class="form-label">Target (image or repo) *</label>
+                <input class="form-input" id="sc-target" type="text" placeholder="e.g. myapp:1.0.0 or github.com/org/repo" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Pipeline Name</label>
+                <input class="form-input" id="sc-pipeline" type="text" placeholder="Optional" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Summary</label>
+                <input class="form-input" id="sc-summary" type="text" placeholder="Short description" autocomplete="off">
+            </div>
+            <!-- Severity counts -->
+            <div style="grid-column:1/-1;display:grid;grid-template-columns:repeat(5,1fr);gap:0.5rem">
+                <div class="form-group">
+                    <label class="form-label" style="color:#ef4444">Critical</label>
+                    <input class="form-input" id="sc-critical" type="number" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="color:#f97316">High</label>
+                    <input class="form-input" id="sc-high" type="number" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="color:#f59e0b">Medium</label>
+                    <input class="form-input" id="sc-medium" type="number" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="color:#3b82f6">Low</label>
+                    <input class="form-input" id="sc-low" type="number" value="0" min="0">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="color:#64748b">Info</label>
+                    <input class="form-input" id="sc-info" type="number" value="0" min="0">
+                </div>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+                <label class="form-label">Raw Result JSON (optional)</label>
+                <textarea class="form-input" id="sc-json" rows="5" placeholder="Paste raw JSON output here..." style="font-family:monospace;font-size:0.78rem;resize:vertical"></textarea>
+            </div>
+        </div>
+        <div class="form-error" id="scan-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeScanModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitScanForm()">Save Report</button>
+        </div>
+    </div>
+</div>
+
+<!-- SCAN DETAIL MODAL -->
+<div class="modal-overlay" id="scan-detail-modal">
+    <div class="modal-box" style="max-width:700px">
+        <div class="modal-title" id="scan-detail-title">🛡️ Scan Detail</div>
+        <div id="scan-detail-body" style="max-height:65vh;overflow-y:auto"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="document.getElementById('scan-detail-modal').classList.remove('open')">Close</button>
         </div>
     </div>
 </div>
@@ -807,6 +918,34 @@ sudo apt-get update -y && sudo apt-get install -y git curl jq build-essential
             </div>
         </div>
 
+        <div style="border-top:1px solid #1e293b;margin:0.8rem 0 1rem"></div>
+
+        <div class="form-group">
+            <label class="form-label" style="margin-bottom:0.6rem">🛡️ Security Scans</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem">
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.55rem 0.75rem;border:1px solid #1e293b;border-radius:6px;font-size:0.82rem;transition:border-color 0.15s" id="scan-lbl-trivy">
+                    <input type="checkbox" id="pip-scan-trivy" onchange="toggleScanLabel('trivy')">
+                    <span>🔍 Trivy</span>
+                    <span style="font-size:0.72rem;color:#64748b;margin-left:auto">Container scan</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.55rem 0.75rem;border:1px solid #1e293b;border-radius:6px;font-size:0.82rem;transition:border-color 0.15s" id="scan-lbl-sbom">
+                    <input type="checkbox" id="pip-scan-sbom" onchange="toggleScanLabel('sbom')">
+                    <span>📦 SBOM</span>
+                    <span style="font-size:0.72rem;color:#64748b;margin-left:auto">Bill of materials</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.55rem 0.75rem;border:1px solid #1e293b;border-radius:6px;font-size:0.82rem;transition:border-color 0.15s" id="scan-lbl-gitleaks">
+                    <input type="checkbox" id="pip-scan-gitleaks" onchange="toggleScanLabel('gitleaks')">
+                    <span>🔑 Gitleaks</span>
+                    <span style="font-size:0.72rem;color:#64748b;margin-left:auto">Secret detection</span>
+                </label>
+                <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;padding:0.55rem 0.75rem;border:1px solid #1e293b;border-radius:6px;font-size:0.82rem;transition:border-color 0.15s" id="scan-lbl-dependency">
+                    <input type="checkbox" id="pip-scan-dependency" onchange="toggleScanLabel('dependency')">
+                    <span>🧩 Dependency</span>
+                    <span style="font-size:0.72rem;color:#64748b;margin-left:auto">Dep. check</span>
+                </label>
+            </div>
+        </div>
+
         <div class="form-error" id="pipeline-form-error"></div>
         <div class="modal-actions">
             <button class="btn btn-ghost" onclick="closePipelineModal()">Cancel</button>
@@ -1008,7 +1147,7 @@ function filteredByWs(arr) {
 
 // ── Section Navigation ────────────────────────────────────
 function showSection(name) {
-    ['overview','pipelines','builds','deployments','repos','registry','secrets','workspace','wsusers','workers'].forEach(s => {
+    ['overview','pipelines','builds','deployments','security','repos','registry','secrets','workspace','wsusers','workers'].forEach(s => {
         const el = document.getElementById('section-' + s);
         if (el) el.style.display = s === name ? '' : 'none';
         const btn = document.getElementById('menu-' + s);
@@ -1020,6 +1159,7 @@ function showSection(name) {
     if (name === 'deployments') loadDeploymentHistory();
     if (name === 'registry')    renderRegistries();
     if (name === 'workers')     renderWorkers();
+    if (name === 'security')    renderSecuritySection();
 }
 
 // ── Overview ──────────────────────────────────────────────
@@ -1432,7 +1572,18 @@ function togglePipelinePushFields() {
     const enabled = document.getElementById('pip-push-enabled').checked;
     document.getElementById('pip-push-fields').style.display = enabled ? '' : 'none';
 }
-function closePipelineModal() { document.getElementById('pipeline-modal').classList.remove('open'); }
+function toggleScanLabel(type) {
+    const checked = document.getElementById('pip-scan-' + type).checked;
+    const lbl = document.getElementById('scan-lbl-' + type);
+    if (lbl) lbl.style.borderColor = checked ? '#818cf8' : '#1e293b';
+}
+function closePipelineModal() {
+    document.getElementById('pipeline-modal').classList.remove('open');
+    ['trivy','sbom','gitleaks','dependency'].forEach(t => {
+        const cb = document.getElementById('pip-scan-' + t);
+        if (cb) { cb.checked = false; toggleScanLabel(t); }
+    });
+}
 
 function submitPipelineForm() {
     const name      = document.getElementById('pip-name').value.trim();
@@ -1463,12 +1614,21 @@ function submitPipelineForm() {
     if (pushEnabled && !registryId) { errEl.textContent = 'Select a registry or uncheck "Push to Registry"'; return; }
     if (pushEnabled && !imageTag)   { errEl.textContent = 'Enter an image name:tag to push (e.g. myapp:latest)'; return; }
 
+    // Security scans
+    const scans = {
+        trivy:      document.getElementById('pip-scan-trivy').checked,
+        sbom:       document.getElementById('pip-scan-sbom').checked,
+        gitleaks:   document.getElementById('pip-scan-gitleaks').checked,
+        dependency: document.getElementById('pip-scan-dependency').checked,
+    };
+
     const id = Date.now();
     cicdState.pipelines.push({
         id, name, repo, branch, buildCmd, deployCmd, trigger,
         wsId: cicdState.currentWsId, createdAt: new Date().toISOString(),
         workerId, workerName,
         registryId, registryName, registryUrl, imageTag,
+        scans,
     });
     saveState();
     closePipelineModal();
@@ -2008,6 +2168,185 @@ function copyInstallScript() {
     navigator.clipboard.writeText(pre.textContent)
         .then(() => alert('Install script copied to clipboard!'))
         .catch(() => alert('Copy failed — please select and copy manually.'));
+}
+
+// ── Security Scan Reports ────────────────────────────────
+let currentScanTab = 'trivy';
+
+function renderSecuritySection() {
+    switchScanTab(currentScanTab);
+}
+
+function switchScanTab(type) {
+    currentScanTab = type;
+    ['trivy','sbom','gitleaks','dependency'].forEach(t => {
+        const btn = document.getElementById('scan-tab-' + t);
+        if (btn) btn.classList.toggle('active', t === type);
+    });
+    loadSecurityReports(type);
+}
+
+function loadSecurityReports(type) {
+    const wsId = cicdState.currentWsId || '';
+    const body = document.getElementById('security-body');
+    const summBar = document.getElementById('scan-summary-bar');
+    if (!body) return;
+    body.innerHTML = '<div class="empty-state"><div>Loading...</div></div>';
+
+    fetch(`/api/cicd/scans?type=${type}&workspace_id=${encodeURIComponent(wsId)}`)
+        .then(r => r.json())
+        .then(list => {
+            if (!list || list.length === 0) {
+                body.innerHTML = '<div class="empty-state"><div class="empty-icon">🛡️</div><div>No scan reports found for this type.</div></div>';
+                if (summBar) summBar.innerHTML = '';
+                return;
+            }
+            // Summary totals
+            const totals = {critical:0,high:0,medium:0,low:0,info:0};
+            list.forEach(s => { totals.critical+=s.critical; totals.high+=s.high; totals.medium+=s.medium; totals.low+=s.low; totals.info+=s.info; });
+            if (summBar) {
+                summBar.innerHTML = [
+                    `<span style="background:#ef444420;color:#ef4444;padding:4px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Critical: ${totals.critical}</span>`,
+                    `<span style="background:#f9731620;color:#f97316;padding:4px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">High: ${totals.high}</span>`,
+                    `<span style="background:#f59e0b20;color:#f59e0b;padding:4px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Medium: ${totals.medium}</span>`,
+                    `<span style="background:#3b82f620;color:#3b82f6;padding:4px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Low: ${totals.low}</span>`,
+                    `<span style="background:#64748b20;color:#64748b;padding:4px 10px;border-radius:12px;font-size:0.82rem;font-weight:600">Info: ${totals.info}</span>`,
+                    `<span style="color:#94a3b8;font-size:0.8rem">Total scans: ${list.length}</span>`,
+                ].join('');
+            }
+            // Table
+            const rows = list.map(s => `
+                <tr>
+                    <td style="font-family:monospace;font-size:0.8rem">${escapeHtml(s.target)}</td>
+                    <td>${escapeHtml(s.pipeline_name || '—')}</td>
+                    <td>${scanStatusBadge(s.status)}</td>
+                    <td style="text-align:center;color:${s.critical>0?'#ef4444':'#94a3b8'}">${s.critical}</td>
+                    <td style="text-align:center;color:${s.high>0?'#f97316':'#94a3b8'}">${s.high}</td>
+                    <td style="text-align:center;color:${s.medium>0?'#f59e0b':'#94a3b8'}">${s.medium}</td>
+                    <td style="text-align:center;color:${s.low>0?'#3b82f6':'#94a3b8'}">${s.low}</td>
+                    <td style="font-size:0.78rem;color:#94a3b8">${s.created_at ? s.created_at.slice(0,16) : '—'}</td>
+                    <td>
+                        <button class="btn btn-ghost btn-sm" onclick="viewScanDetail(${s.id})">Detail</button>
+                        <button class="btn btn-ghost btn-sm can-admin" onclick="deleteScan(${s.id})" style="color:#ef4444">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+            body.innerHTML = `
+                <table style="width:100%;border-collapse:collapse;font-size:0.83rem">
+                    <thead>
+                        <tr style="border-bottom:1px solid var(--border);color:#94a3b8">
+                            <th style="text-align:left;padding:8px 6px">Target</th>
+                            <th style="text-align:left;padding:8px 6px">Pipeline</th>
+                            <th style="text-align:left;padding:8px 6px">Status</th>
+                            <th style="text-align:center;padding:8px 6px">Crit</th>
+                            <th style="text-align:center;padding:8px 6px">High</th>
+                            <th style="text-align:center;padding:8px 6px">Med</th>
+                            <th style="text-align:center;padding:8px 6px">Low</th>
+                            <th style="text-align:left;padding:8px 6px">Date</th>
+                            <th style="text-align:left;padding:8px 6px">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>`;
+        })
+        .catch(err => {
+            body.innerHTML = `<div class="empty-state"><div style="color:#ef4444">Error loading scans: ${err.message}</div></div>`;
+        });
+}
+
+function openScanModal() {
+    const errEl = document.getElementById('scan-form-error');
+    if (errEl) errEl.textContent = '';
+    ['sc-target','sc-pipeline','sc-summary','sc-json'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+    ['sc-critical','sc-high','sc-medium','sc-low','sc-info'].forEach(id => { const el = document.getElementById(id); if(el) el.value='0'; });
+    const typeEl = document.getElementById('sc-type');
+    if (typeEl) typeEl.value = currentScanTab;
+    document.getElementById('scan-modal').classList.add('open');
+}
+
+function closeScanModal() { document.getElementById('scan-modal').classList.remove('open'); }
+
+function submitScanForm() {
+    const errEl = document.getElementById('scan-form-error');
+    if (errEl) errEl.textContent = '';
+    const target = document.getElementById('sc-target').value.trim();
+    if (!target) { if (errEl) errEl.textContent = 'Target is required.'; return; }
+    const payload = {
+        scan_type:    document.getElementById('sc-type').value,
+        target,
+        pipeline_name: document.getElementById('sc-pipeline').value.trim(),
+        status:       document.getElementById('sc-status').value,
+        critical:     parseInt(document.getElementById('sc-critical').value)||0,
+        high:         parseInt(document.getElementById('sc-high').value)||0,
+        medium:       parseInt(document.getElementById('sc-medium').value)||0,
+        low:          parseInt(document.getElementById('sc-low').value)||0,
+        info:         parseInt(document.getElementById('sc-info').value)||0,
+        summary:      document.getElementById('sc-summary').value.trim(),
+        result_json:  document.getElementById('sc-json').value.trim(),
+        workspace_id: cicdState.currentWsId || '',
+    };
+    fetch('/api/cicd/scans', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) { closeScanModal(); loadSecurityReports(currentScanTab); }
+            else { if (errEl) errEl.textContent = d.error || 'Failed to save.'; }
+        })
+        .catch(err => { if (errEl) errEl.textContent = err.message; });
+}
+
+function deleteScan(id) {
+    if (!confirm('Delete this scan report?')) return;
+    fetch(`/api/cicd/scans/${id}`, {method:'DELETE'})
+        .then(r => r.json())
+        .then(() => loadSecurityReports(currentScanTab))
+        .catch(err => alert('Delete failed: ' + err.message));
+}
+
+function viewScanDetail(id) {
+    fetch(`/api/cicd/scans/${id}`)
+        .then(r => r.json())
+        .then(s => {
+            document.getElementById('scan-detail-title').textContent = `🛡️ ${s.scan_type.toUpperCase()} — ${s.target}`;
+            let html = `
+                <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:16px">
+                    <div style="text-align:center;background:#ef444420;border-radius:8px;padding:8px"><div style="font-size:1.4rem;color:#ef4444;font-weight:700">${s.critical}</div><div style="font-size:0.75rem;color:#94a3b8">Critical</div></div>
+                    <div style="text-align:center;background:#f9731620;border-radius:8px;padding:8px"><div style="font-size:1.4rem;color:#f97316;font-weight:700">${s.high}</div><div style="font-size:0.75rem;color:#94a3b8">High</div></div>
+                    <div style="text-align:center;background:#f59e0b20;border-radius:8px;padding:8px"><div style="font-size:1.4rem;color:#f59e0b;font-weight:700">${s.medium}</div><div style="font-size:0.75rem;color:#94a3b8">Medium</div></div>
+                    <div style="text-align:center;background:#3b82f620;border-radius:8px;padding:8px"><div style="font-size:1.4rem;color:#3b82f6;font-weight:700">${s.low}</div><div style="font-size:0.75rem;color:#94a3b8">Low</div></div>
+                    <div style="text-align:center;background:#64748b20;border-radius:8px;padding:8px"><div style="font-size:1.4rem;color:#94a3b8;font-weight:700">${s.info}</div><div style="font-size:0.75rem;color:#94a3b8">Info</div></div>
+                </div>`;
+            if (s.summary) html += `<p style="color:#e2e8f0;margin-bottom:12px">${escapeHtml(s.summary)}</p>`;
+            if (s.result_json && s.result_json.trim()) {
+                let pretty = s.result_json;
+                try { pretty = JSON.stringify(JSON.parse(s.result_json), null, 2); } catch(e) {}
+                html += `<pre style="background:#0f172a;padding:12px;border-radius:6px;font-size:0.75rem;color:#7dd3fc;max-height:45vh;overflow-y:auto;white-space:pre-wrap;word-break:break-all">${escapeHtml(pretty)}</pre>`;
+            }
+            document.getElementById('scan-detail-body').innerHTML = html;
+            document.getElementById('scan-detail-modal').classList.add('open');
+        })
+        .catch(err => alert('Failed to load detail: ' + err.message));
+}
+
+function scanChips(scans) {
+    if (!scans) return '<span style="font-size:0.73rem;color:#475569">—</span>';
+    const defs = [
+        { key:'trivy',      label:'🔍 Trivy' },
+        { key:'sbom',       label:'📦 SBOM' },
+        { key:'gitleaks',   label:'🔑 Leaks' },
+        { key:'dependency', label:'🧩 Dep' },
+    ];
+    const chips = defs.filter(d => scans[d.key])
+        .map(d => `<span style="font-size:0.68rem;background:#818cf820;color:#818cf8;border:1px solid #818cf840;border-radius:10px;padding:2px 7px">${d.label}</span>`);
+    return chips.length ? `<div style="display:flex;flex-wrap:wrap;gap:3px">${chips.join('')}</div>` : '<span style="font-size:0.73rem;color:#475569">—</span>';
+}
+
+function scanStatusBadge(status) {
+    const map = {
+        clean:    '<span class="badge badge-success">✅ Clean</span>',
+        findings: '<span class="badge badge-failed">⚠️ Findings</span>',
+        error:    '<span class="badge badge-stopped">❌ Error</span>',
+    };
+    return map[status] || `<span class="badge badge-stopped">${status}</span>`;
 }
 
 // ── Helpers ───────────────────────────────────────────────

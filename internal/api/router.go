@@ -154,5 +154,12 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/cicd/workers/{id}", DeleteWorker).Methods("DELETE")
 	api.HandleFunc("/cicd/workers/{id}/test", TestWorkerSSH).Methods("POST")
 
+	// Security Scan Reports
+	api.HandleFunc("/cicd/scans", ListScanReports).Methods("GET")
+	api.HandleFunc("/cicd/scans/summary", ScanSummary).Methods("GET")
+	api.HandleFunc("/cicd/scans", CreateScanReport).Methods("POST")
+	api.HandleFunc("/cicd/scans/{id}", GetScanReport).Methods("GET")
+	api.HandleFunc("/cicd/scans/{id}", DeleteScanReport).Methods("DELETE")
+
 	return r
 }
