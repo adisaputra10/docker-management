@@ -1,6 +1,6 @@
 @echo off
 echo Building Docker Manager...
-rm -f docker-manager.exe
+
 go build -o docker-manager.exe ./cmd/server
 if %ERRORLEVEL% EQU 0 (
     echo Build success!

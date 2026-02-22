@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"context"
@@ -39,7 +39,7 @@ func listContainers(w http.ResponseWriter, r *http.Request) {
 	allowedContainers := make(map[string]bool)
 	isAdmin := false
 	if success {
-		if user.Role == "admin" {
+		if HasRole(user.Role, "admin") {
 			isAdmin = true
 		} else {
 			// Fetch allowed containers for this user and host
@@ -445,3 +445,5 @@ func GetHostContainers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(containers)
 }
+
+

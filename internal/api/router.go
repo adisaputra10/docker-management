@@ -112,6 +112,8 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/k0s/clusters/{id}/nodes", GetClusterNodes).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/kubeconfig", DownloadKubeconfig).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/kubeconfig-status", GetKubeconfigStatus).Methods("GET")
+	api.HandleFunc("/k0s/import", ImportK0sCluster).Methods("POST")
+	api.HandleFunc("/k0s/clusters/{id}/kubeconfig-update", UpdateClusterKubeconfig).Methods("PUT")
 	api.HandleFunc("/k0s/test-connection", TestK0sConnection).Methods("POST")
 	api.HandleFunc("/k0s/deploy", DeployOnK0s).Methods("POST")
 
@@ -125,6 +127,9 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/k0s/clusters/{id}/k8s/quotas", GetAllResourceQuotas).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/k8s/ns-usage", GetNamespacePodUsage).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/k8s/nodes", GetClusterNodes2).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/nodes/{name}", UpdateNodeLabels).Methods("PATCH")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/nodes-metrics", GetNodeMetrics).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/k8s/pods-metrics", GetPodMetrics).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/k8s/{resource}", GetClusterResources).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/k8s/{resource}/{name}", GetClusterResourceByName).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/k8s/{resource}/{name}", DeleteClusterResource).Methods("DELETE")
@@ -133,6 +138,21 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/k0s/clusters/{id}/k8s/pods/{name}/events", GetPodEvents).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/k8s/pods/{name}/exec", PodExec).Methods("GET") // WebSocket
 	api.HandleFunc("/k0s/clusters/{id}/k8s/apply", ApplyClusterResource).Methods("POST")
+
+	// CI/CD Registries
+	api.HandleFunc("/cicd/registries", ListRegistries).Methods("GET")
+	api.HandleFunc("/cicd/registries", CreateRegistry).Methods("POST")
+	api.HandleFunc("/cicd/registries/test", TestRegistry).Methods("POST")
+	api.HandleFunc("/cicd/registries/{id}", GetRegistry).Methods("GET")
+	api.HandleFunc("/cicd/registries/{id}", DeleteRegistry).Methods("DELETE")
+
+	// CI/CD Workers  (admin only)
+	api.HandleFunc("/cicd/workers", ListWorkers).Methods("GET")
+	api.HandleFunc("/cicd/workers", CreateWorker).Methods("POST")
+	api.HandleFunc("/cicd/workers/test-ssh", TestWorkerSSHDirect).Methods("POST")
+	api.HandleFunc("/cicd/workers/{id}", GetWorker).Methods("GET")
+	api.HandleFunc("/cicd/workers/{id}", DeleteWorker).Methods("DELETE")
+	api.HandleFunc("/cicd/workers/{id}/test", TestWorkerSSH).Methods("POST")
 
 	return r
 }

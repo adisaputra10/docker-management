@@ -87,7 +87,7 @@ func InitDB() error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		username TEXT UNIQUE NOT NULL,
 		password TEXT NOT NULL,
-		role TEXT NOT NULL CHECK(role IN ('admin', 'user', 'user_docker', 'user_docker_basic', 'user_k8s_full', 'user_k8s_view')),
+		role TEXT NOT NULL,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
 	`
@@ -248,6 +248,48 @@ func InitDB() error {
 		return err
 	}
 
+	// Create cicd_registries table
+	queryCicdRegistries := `
+	CREATE TABLE IF NOT EXISTS cicd_registries (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		type TEXT NOT NULL,
+		url TEXT,
+		username TEXT,
+		password TEXT,
+		ssl_enabled INTEGER NOT NULL DEFAULT 1,
+		insecure_skip_verify INTEGER NOT NULL DEFAULT 0,
+		extra_config TEXT,
+		description TEXT,
+		workspace_id TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = DB.Exec(queryCicdRegistries); err != nil {
+		return err
+	}
+
+	// Create cicd_workers table
+	queryCicdWorkers := `
+	CREATE TABLE IF NOT EXISTS cicd_workers (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		host TEXT NOT NULL,
+		ssh_port INTEGER NOT NULL DEFAULT 22,
+		ssh_user TEXT NOT NULL DEFAULT 'root',
+		ssh_private_key TEXT,
+		agent_type TEXT NOT NULL DEFAULT 'shell',
+		labels TEXT,
+		description TEXT,
+		workspace_id TEXT,
+		status TEXT DEFAULT 'offline',
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = DB.Exec(queryCicdWorkers); err != nil {
+		return err
+	}
+
 	// Migrate: add 'view' role to users table CHECK constraint
 	// SQLite doesn't support modifying CHECK constraints, so we recreate the table
 	err = migrateUsersRoleConstraint()
@@ -339,13 +381,13 @@ func migrateUsersRoleConstraint() error {
 		return err
 	}
 
-	// If constraint already has all new roles, we're done
-	if strings.Contains(sql, "'user_docker_basic'") {
-		log.Println("Users table already has updated role constraint")
+	// If table no longer uses CHECK constraint, we're done
+	if !strings.Contains(sql, "CHECK") {
+		log.Println("Users table already migrated (no CHECK constraint)")
 		return nil
 	}
 
-	log.Println("Migrating users table role constraint...")
+	log.Println("Migrating users table: removing role CHECK constraint for multi-role support...")
 
 	// Begin transaction
 	tx, err := DB.Begin()
@@ -362,13 +404,13 @@ func migrateUsersRoleConstraint() error {
 		return fmt.Errorf("failed to rename old users table: %v", err)
 	}
 
-	// Create new table with updated constraint
+	// Create new table without CHECK constraint (supports comma-separated multi-roles)
 	createSQL := `
 		CREATE TABLE users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT UNIQUE NOT NULL,
 			password TEXT NOT NULL,
-			role TEXT NOT NULL CHECK(role IN ('admin', 'user', 'user_docker', 'user_docker_basic', 'user_k8s_full', 'user_k8s_view')),
+			role TEXT NOT NULL,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 	`

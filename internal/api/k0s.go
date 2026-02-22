@@ -1207,6 +1207,151 @@ func GetKubeconfigStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ImportK0sCluster imports an existing cluster via kubeconfig content
+func ImportK0sCluster(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name       string `json:"name"`
+		Kubeconfig string `json:"kubeconfig"`
+		Type       string `json:"type"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" || req.Kubeconfig == "" {
+		http.Error(w, "Name and kubeconfig are required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Type == "" {
+		req.Type = "external"
+	}
+
+	// Extract server IP/host from kubeconfig
+	ipAddress := "external"
+	for _, line := range strings.Split(req.Kubeconfig, "\n") {
+		trimed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimed, "server:") {
+			serverURL := strings.TrimSpace(strings.TrimPrefix(trimed, "server:"))
+			serverURL = strings.TrimPrefix(serverURL, "https://")
+			serverURL = strings.TrimPrefix(serverURL, "http://")
+			if idx := strings.Index(serverURL, "/"); idx > 0 {
+				serverURL = serverURL[:idx]
+			}
+			if host, _, err := net.SplitHostPort(serverURL); err == nil {
+				ipAddress = host
+			} else {
+				ipAddress = serverURL
+			}
+			break
+		}
+	}
+
+	// Check if cluster with this name already exists – update kubeconfig if so
+	var existingID int
+	existErr := database.DB.QueryRow("SELECT id FROM k0s_clusters WHERE name = ?", req.Name).Scan(&existingID)
+	if existErr == nil {
+		// Cluster exists – update kubeconfig, status and ip
+		_, err := database.DB.Exec(
+			"UPDATE k0s_clusters SET kubeconfig = ?, ip_address = ?, status = 'running', type = ? WHERE id = ?",
+			req.Kubeconfig, ipAddress, req.Type, existingID,
+		)
+		if err != nil {
+			log.Printf("Error updating cluster kubeconfig: %v", err)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": err.Error()})
+			return
+		}
+		log.Printf("Cluster '%s' (id=%d) kubeconfig updated successfully (server: %s)", req.Name, existingID, ipAddress)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Cluster kubeconfig updated successfully",
+			"id":      existingID,
+		})
+		return
+	}
+
+	// New cluster – insert
+	result, err := database.DB.Exec(
+		"INSERT INTO k0s_clusters (name, ip_address, username, status, created_at, kubeconfig, type) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		req.Name, ipAddress, "", "running", time.Now().Format("2006-01-02 15:04:05"), req.Kubeconfig, req.Type,
+	)
+	if err != nil {
+		log.Printf("Error importing cluster: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "message": err.Error()})
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	log.Printf("Cluster '%s' imported successfully with id %d (server: %s)", req.Name, id, ipAddress)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Cluster imported successfully",
+		"id":      id,
+	})
+}
+
+// UpdateClusterKubeconfig updates the kubeconfig of an existing cluster
+// PUT /api/k0s/clusters/{id}/kubeconfig-update
+func UpdateClusterKubeconfig(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	clusterID := vars["id"]
+
+	var req struct {
+		Kubeconfig string `json:"kubeconfig"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Kubeconfig) == "" {
+		http.Error(w, "kubeconfig is required", http.StatusBadRequest)
+		return
+	}
+
+	// Extract server IP
+	ipAddress := ""
+	for _, line := range strings.Split(req.Kubeconfig, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "server:") {
+			serverURL := strings.TrimSpace(strings.TrimPrefix(trimmed, "server:"))
+			serverURL = strings.TrimPrefix(serverURL, "https://")
+			serverURL = strings.TrimPrefix(serverURL, "http://")
+			if idx := strings.Index(serverURL, "/"); idx > 0 {
+				serverURL = serverURL[:idx]
+			}
+			if host, _, err := net.SplitHostPort(serverURL); err == nil {
+				ipAddress = host
+			} else {
+				ipAddress = serverURL
+			}
+			break
+		}
+	}
+
+	query := "UPDATE k0s_clusters SET kubeconfig = ?, status = 'running'"
+	args := []interface{}{req.Kubeconfig}
+	if ipAddress != "" {
+		query += ", ip_address = ?"
+		args = append(args, ipAddress)
+	}
+	query += " WHERE id = ?"
+	args = append(args, clusterID)
+
+	_, err := database.DB.Exec(query, args...)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Printf("Kubeconfig updated for cluster id=%s (server: %s)", clusterID, ipAddress)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "message": "Kubeconfig updated"})
+}
+
 // GetClusterNodes returns all nodes in a cluster
 func GetClusterNodes(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

@@ -1,9 +1,10 @@
-package api
+﻿package api
 
 import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/adisaputra10/docker-management/internal/database"
 	"github.com/gorilla/mux"
@@ -14,7 +15,7 @@ import (
 func ListUsers(w http.ResponseWriter, r *http.Request) {
 	// Verify Admin
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -52,15 +53,16 @@ func ListUsers(w http.ResponseWriter, r *http.Request) {
 
 func CreateUser(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
 	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Role     string `json:"role"`
+		Username string   `json:"username"`
+		Password string   `json:"password"`
+		Role     string   `json:"role"`
+		Roles    []string `json:"roles"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
@@ -72,21 +74,35 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate role
-	validRoles := map[string]bool{
-		"admin":               true,
-		"user_docker":         true,
-		"user_docker_basic":   true,
-		"user_k8s_full":       true,
-		"user_k8s_view":       true,
+	// Support both single Role and multiple Roles
+	if len(req.Roles) == 0 && req.Role != "" {
+		req.Roles = []string{req.Role}
 	}
-	if !validRoles[req.Role] {
-		http.Error(w, "Invalid role. Must be: admin, user_docker, user_docker_basic, user_k8s_full, or user_k8s_view", http.StatusBadRequest)
+	if len(req.Roles) == 0 {
+		http.Error(w, "At least one role is required", http.StatusBadRequest)
 		return
 	}
 
+	// Validate each role
+	validRoles := map[string]bool{
+		"admin":             true,
+		"user_docker":       true,
+		"user_docker_basic": true,
+		"user_k8s_full":     true,
+		"user_k8s_view":     true,
+		"user_cicd_full":    true,
+		"user_cicd_view":    true,
+	}
+	for _, rr := range req.Roles {
+		if !validRoles[strings.TrimSpace(rr)] {
+			http.Error(w, "Invalid role: "+rr, http.StatusBadRequest)
+			return
+		}
+	}
+	roleStr := strings.Join(req.Roles, ",")
+
 	hashed := hashPassword(req.Password) // defined in auth.go
-	_, err := database.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, hashed, req.Role)
+	_, err := database.DB.Exec("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", req.Username, hashed, roleStr)
 	if err != nil {
 		http.Error(w, "Error creating user: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -98,7 +114,7 @@ func CreateUser(w http.ResponseWriter, r *http.Request) {
 
 func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -107,34 +123,54 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 	id := vars["id"]
 
 	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		Role     string `json:"role"`
+		Username string   `json:"username"`
+		Password string   `json:"password"`
+		Role     string   `json:"role"`
+		Roles    []string `json:"roles"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 
-	// Validate role
-	validRoles := map[string]bool{
-		"admin":               true,
-		"user_docker":         true,
-		"user_docker_basic":   true,
-		"user_k8s_full":       true,
-		"user_k8s_view":       true,
+	// Support both single Role and multiple Roles
+	if len(req.Roles) == 0 && req.Role != "" {
+		req.Roles = []string{req.Role}
 	}
-	if !validRoles[req.Role] {
-		http.Error(w, "Invalid role. Must be: admin, user_docker, user_docker_basic, user_k8s_full, or user_k8s_view", http.StatusBadRequest)
+	if len(req.Roles) == 0 {
+		http.Error(w, "At least one role is required", http.StatusBadRequest)
 		return
 	}
 
+	// Validate each role
+	validRoles := map[string]bool{
+		"admin":             true,
+		"user_docker":       true,
+		"user_docker_basic": true,
+		"user_k8s_full":     true,
+		"user_k8s_view":     true,
+		"user_cicd_full":    true,
+		"user_cicd_view":    true,
+	}
+	for _, rr := range req.Roles {
+		if !validRoles[strings.TrimSpace(rr)] {
+			http.Error(w, "Invalid role: "+rr, http.StatusBadRequest)
+			return
+		}
+	}
+	roleStr := strings.Join(req.Roles, ",")
+
 	var err error
-	if req.Password != "" {
+	if req.Username != "" && req.Password != "" {
 		hashed := hashPassword(req.Password)
-		_, err = database.DB.Exec("UPDATE users SET username = ?, password = ?, role = ? WHERE id = ?", req.Username, hashed, req.Role, id)
+		_, err = database.DB.Exec("UPDATE users SET username = ?, password = ?, role = ? WHERE id = ?", req.Username, hashed, roleStr, id)
+	} else if req.Username != "" {
+		_, err = database.DB.Exec("UPDATE users SET username = ?, role = ? WHERE id = ?", req.Username, roleStr, id)
+	} else if req.Password != "" {
+		hashed := hashPassword(req.Password)
+		_, err = database.DB.Exec("UPDATE users SET password = ?, role = ? WHERE id = ?", hashed, roleStr, id)
 	} else {
-		_, err = database.DB.Exec("UPDATE users SET username = ?, role = ? WHERE id = ?", req.Username, req.Role, id)
+		_, err = database.DB.Exec("UPDATE users SET role = ? WHERE id = ?", roleStr, id)
 	}
 
 	if err != nil {
@@ -147,7 +183,7 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 
 func DeleteUser(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -196,7 +232,7 @@ func ListProjects(w http.ResponseWriter, r *http.Request) {
 	query := ""
 	args := []interface{}{}
 
-	if user.Role == "admin" {
+	if HasRole(user.Role, "admin") {
 		query = "SELECT id, name, description FROM projects"
 	} else {
 		query = "SELECT p.id, p.name, p.description FROM projects p JOIN project_users pu ON p.id = pu.project_id WHERE pu.user_id = ?"
@@ -223,7 +259,7 @@ func ListProjects(w http.ResponseWriter, r *http.Request) {
 
 func CreateProject(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -244,7 +280,7 @@ func CreateProject(w http.ResponseWriter, r *http.Request) {
 
 func DeleteProject(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -256,7 +292,7 @@ func DeleteProject(w http.ResponseWriter, r *http.Request) {
 // Assign User to Project
 func AssignUser(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -276,7 +312,7 @@ func AssignUser(w http.ResponseWriter, r *http.Request) {
 // Assign Resource (Container) to Project
 func AssignResource(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -312,7 +348,7 @@ func GetProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user.Role != "admin" {
+	if !HasRole(user.Role, "admin") {
 		// Check assignment
 		var count int
 		database.DB.QueryRow("SELECT COUNT(*) FROM project_users WHERE project_id = ? AND user_id = ?", id, user.ID).Scan(&count)
@@ -388,7 +424,7 @@ func GetProject(w http.ResponseWriter, r *http.Request) {
 
 func UnassignUser(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -410,7 +446,7 @@ func UnassignUser(w http.ResponseWriter, r *http.Request) {
 
 func UnassignResource(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -440,7 +476,7 @@ func UnassignResource(w http.ResponseWriter, r *http.Request) {
 // GET /api/users/{id}/namespaces?cluster_id=123
 func GetUserNamespaces(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -490,7 +526,7 @@ func GetUserNamespaces(w http.ResponseWriter, r *http.Request) {
 // body: {"cluster_id":1,"namespaces":["default","kube-system"]}
 func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -558,7 +594,7 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 // DELETE /api/users/{id}/namespaces/{namespace}?cluster_id=1
 func RevokeUserNamespace(w http.ResponseWriter, r *http.Request) {
 	user, success := GetUserFromContext(r.Context())
-	if !success || user.Role != "admin" {
+	if !success || !HasRole(user.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -585,3 +621,5 @@ func RevokeUserNamespace(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "revoked"})
 }
+
+

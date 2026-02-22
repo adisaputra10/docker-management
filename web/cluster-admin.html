@@ -578,6 +578,27 @@
     </div>
 </div>
 
+<!-- NODE LABELS MODAL -->
+<div class="modal-overlay" id="node-label-modal">
+    <div class="modal-box" style="max-width:600px;">
+        <div class="modal-header">
+            <div class="modal-title" id="node-label-title">🏷️ Node Labels</div>
+            <button class="modal-close" onclick="closeNodeLabelModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:0.8rem;color:#64748b;margin:0 0 1rem">Add or update labels on this node. Format: <code style="background:#0f1117;padding:0.1rem 0.3rem;border-radius:4px;color:#94a3b8">key=value</code> (one per line)</p>
+            <textarea id="node-label-input" placeholder="key1=value1&#10;key2=value2&#10;zone=us-west" autocomplete="off"
+                style="width:100%;height:150px;padding:0.75rem;background:#0f1117;border:1px solid rgba(255,255,255,0.15);color:#e2e8f0;border-radius:8px;font-size:0.85rem;outline:none;box-sizing:border-box;font-family:monospace;resize:vertical"></textarea>
+            <div style="font-size:0.75rem;color:#64748b;margin-top:0.5rem">Existing labels will be updated (add <code style="background:#0f1117;padding:0.1rem 0.3rem;border-radius:4px">--overwrite</code> is automatically used)</div>
+            <div id="node-label-error" style="margin-top:0.75rem;font-size:0.8rem;color:#f87171;min-height:1.1em"></div>
+            <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+                <button class="btn btn-ghost" onclick="closeNodeLabelModal()">Cancel</button>
+                <button class="btn btn-primary" id="node-label-submit" onclick="submitNodeLabels()">Update Labels</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- POD DETAILS MODAL -->
 <div class="modal-overlay" id="pod-details-modal">
     <div class="modal-box" style="max-width:900px;max-height:85vh;display:flex;flex-direction:column">
@@ -617,8 +638,9 @@
                 </div>
                 <div>
                     <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Namespace *</label>
-                    <input id="dep-namespace" type="text" placeholder="default" autocomplete="off"
-                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                    <select id="dep-namespace" style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                        <option value="default">default</option>
+                    </select>
                 </div>
                 <div>
                     <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Docker Image *</label>
@@ -639,6 +661,13 @@
                     <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Label (app name)</label>
                     <input id="dep-label" type="text" placeholder="auto-filled from deployment name" autocomplete="off"
                         style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                </div>
+                <div>
+                    <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Node Selector (optional)</label>
+                    <textarea id="dep-node-selector" placeholder="e.g. zone=us-west&#10;node-type=worker" autocomplete="off"
+                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem;min-height:60px;font-family:monospace;resize:vertical">
+                    </textarea>
+                    <div style="font-size:0.7rem;color:#64748b;margin-top:0.3rem">Format: key=value (one per line). Pods akan berjalan di node dengan label ini.</div>
                 </div>
                 <div style="border-top:1px solid rgba(255,255,255,0.1);padding-top:0.8rem;margin-top:0.8rem">
                     <div style="font-size:0.75rem;color:#64748b;font-weight:600;margin-bottom:0.6rem">🔒 RESOURCE LIMITS</div>
@@ -695,8 +724,9 @@
                 </div>
                 <div>
                     <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Namespace *</label>
-                    <input id="svc-namespace" type="text" placeholder="default" autocomplete="off"
-                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                    <select id="svc-namespace" style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                        <option value="default">default</option>
+                    </select>
                 </div>
                 <div>
                     <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Service Type</label>
@@ -754,8 +784,9 @@
                 </div>
                 <div>
                     <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Namespace *</label>
-                    <input id="ing-namespace" type="text" placeholder="default" autocomplete="off"
-                        style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                    <select id="ing-namespace" style="width:100%;padding:0.55rem;background:#0f1117;border:1px solid rgba(255,255,255,0.12);color:#e2e8f0;border-radius:8px;outline:none;font-size:0.85rem">
+                        <option value="default">default</option>
+                    </select>
                 </div>
                 <div>
                     <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.3rem">Hostname *</label>

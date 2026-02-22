@@ -940,8 +940,7 @@ function showImportK0sModal() {
             <div style="display: flex; flex-direction: column; gap: 0.5rem;">
                 <label for="import-type" style="font-weight: 500; color: var(--text-primary); font-size: 0.95rem;">Cluster Type</label>
                 <select id="import-type" style="width: 100%; padding: 0.75rem 2.5rem 0.75rem 0.75rem; border: 1px solid var(--border); border-radius: var(--radius-md); background: rgba(255,255,255,0.08) url('data:image/svg+xml;charset=UTF-8,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22 fill=%22none%22 stroke=%22%238892b0%22 stroke-width=%222%22><polyline points=%226 9 12 15 18 9%22></polyline></svg>') no-repeat right 0.75rem center / 1.25rem; color: var(--text-primary); font-size: 0.95rem; cursor: pointer; appearance: none;">
-                    <option value="external" style="background: #1e293b; color: white; padding: 0.5rem;">External Cluster</option>
-                    <option value="controller" style="background: #1e293b; color: white; padding: 0.5rem;">K0s Controller</option>
+                    <option value="external" style="background: #1e293b; color: white; padding: 0.5rem;">External Cluster (k8s, k3s, k0s)</option>
                 </select>
             </div>
 
@@ -975,9 +974,17 @@ async function importK0sCluster(event) {
 
         const result = await response.json();
         if (result.success) {
-            alert('✓ Cluster imported successfully!');
             closeModal();
             fetchK0sClusters();
+            // Navigate to cluster-admin if we got an ID back
+            if (result.id) {
+                const go = confirm(`✓ ${result.message}\n\nBuka cluster-admin untuk cluster ini sekarang?`);
+                if (go) {
+                    window.location.href = `/cluster-admin.html?id=${result.id}&name=${encodeURIComponent(name)}`;
+                }
+            } else {
+                alert(`✓ ${result.message}`);
+            }
         } else {
             alert('Error: ' + (result.message || 'Failed to import cluster'));
         }

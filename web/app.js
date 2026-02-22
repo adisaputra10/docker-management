@@ -52,53 +52,58 @@ window.fetch = function (url, options) {
 
 function filterMenuByRole() {
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-    const role = userData.role || 'user';
+    const roleStr = userData.role || 'user';
+    const roles = roleStr.split(',').map(r => r.trim()).filter(Boolean);
 
-    console.log('Filtering menu for role:', role);
+    console.log('Filtering menu for roles:', roles);
 
-    // Determine if user is kubernetes-only or docker-only
-    const isKubernetesOnly = role.startsWith('user_k8s_');
-    const isDockerOnly = role.startsWith('user_docker');
-    const isAdmin = role === 'admin';
+    const isAdmin   = roles.includes('admin');
+    const hasDocker = isAdmin || roles.some(r => r.startsWith('user_docker'));
+    const hasK8s    = isAdmin || roles.some(r => r.startsWith('user_k8s_'));
+    const hasCicd   = isAdmin || roles.some(r => r.startsWith('user_cicd_'));
 
-    if (isKubernetesOnly) {
-        console.log('Kubernetes user - hiding docker menus, showing K0s only');
-        
-        // Hide docker resources section - find it by the first nav-section that contains "Resources"
-        const navSections = document.querySelectorAll('.nav-section');
-        navSections.forEach(section => {
+    // CI/CD nav
+    const cicdMenu = document.getElementById('nav-cicd');
+    if (cicdMenu) cicdMenu.style.display = hasCicd ? '' : 'none';
+
+    // K8s nav (k0s tab)
+    document.querySelectorAll('[data-tab="k0s"]').forEach(el => {
+        el.style.display = hasK8s ? '' : 'none';
+    });
+
+    // Docker Resources section
+    if (!hasDocker) {
+        document.querySelectorAll('.nav-section').forEach(section => {
             const title = section.querySelector('.nav-section-title');
-            if (title && title.textContent === 'Resources') {
-                section.style.display = 'none'; // Hide entire Resources section
+            if (title && title.textContent.trim() === 'Resources') {
+                section.style.display = 'none';
             }
         });
+    }
 
-        // Hide Monitoring section except K0s
-        navSections.forEach(section => {
+    // If user has no docker but has k8s, also hide docker-only monitoring items
+    if (!hasDocker && hasK8s) {
+        document.querySelectorAll('.nav-section').forEach(section => {
             const title = section.querySelector('.nav-section-title');
-            if (title && title.textContent === 'Monitoring') {
-                // Hide all items in Monitoring except K0s
-                const items = section.querySelectorAll('.nav-item');
-                items.forEach(item => {
-                    if (!item.hasAttribute('data-tab') || item.getAttribute('data-tab') !== 'k0s') {
-                        item.style.display = 'none';
-                    }
+            if (title && title.textContent.trim() === 'Monitoring') {
+                section.querySelectorAll('.nav-item').forEach(item => {
+                    const tab = item.getAttribute('data-tab');
+                    if (tab !== 'k0s' && item.id !== 'nav-cicd') item.style.display = 'none';
                 });
             }
         });
+    }
 
-    } else if (isDockerOnly) {
-        console.log('Docker user - hiding K0s menu');
-        
-        // Hide K0s menu
-        const k0sMenus = document.querySelectorAll('[data-tab="k0s"]');
-        k0sMenus.forEach(menu => {
-            menu.style.display = 'none';
+    // If only CI/CD, hide everything except CI/CD
+    if (!hasDocker && !hasK8s && hasCicd && !isAdmin) {
+        document.querySelectorAll('.nav-section').forEach(section => {
+            const title = section.querySelector('.nav-section-title');
+            if (title && title.textContent.trim() === 'Monitoring') {
+                section.querySelectorAll('.nav-item').forEach(item => {
+                    if (item.id !== 'nav-cicd') item.style.display = 'none';
+                });
+            }
         });
-
-    } else if (isAdmin) {
-        console.log('Admin user - showing all menus');
-        // Admin sees everything - no filtering needed
     }
 }
 
@@ -111,7 +116,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function hideK0sAdminButtonsIfNeeded() {
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-    const isAdmin = userData.role === 'admin';
+    const roles = (userData.role || '').split(',').map(r => r.trim());
+    const isAdmin = roles.includes('admin');
     
     const adminButtonsDiv = document.getElementById('k0s-admin-buttons');
     if (adminButtonsDiv && !isAdmin) {
@@ -121,8 +127,8 @@ function hideK0sAdminButtonsIfNeeded() {
 
 function hideDockerButtonsForK8sUsers() {
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
-    const role = userData.role || 'user';
-    const isK8sViewOnly = role === 'user_k8s_view';
+    const roles = (userData.role || 'user').split(',').map(r => r.trim());
+    const isK8sViewOnly = roles.includes('user_k8s_view') && !roles.some(r => r === 'admin' || r === 'user_k8s_full');
     
     if (isK8sViewOnly) {
         // For k8s_view role - hide only CREATE buttons (allow Prune and other actions)

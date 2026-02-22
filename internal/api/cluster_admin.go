@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"database/sql"
@@ -9,6 +9,8 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,19 +19,133 @@ import (
 	"github.com/gorilla/mux"
 )
 
-// clusterSSHRun runs a command on the controller via SSH and returns stdout
+// runKubectlWithKubeconfig executes a kubectl command using a stored kubeconfig.
+// It accepts SSH-style commands like "sudo k0s kubectl get pods -o json" and
+// transforms them to local kubectl invocations.
+func runKubectlWithKubeconfig(kubeconfigContent, sshCmd string) (string, error) {
+	// Write kubeconfig to a temp file
+	tmpKC, err := os.CreateTemp("", "kc-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("temp kubeconfig: %v", err)
+	}
+	defer os.Remove(tmpKC.Name())
+	tmpKC.WriteString(kubeconfigContent)
+	tmpKC.Close()
+
+	// Special case: bash script with base64-encoded YAML apply
+	// Pattern from ApplyClusterResource: echo 'B64...' | base64 -d > ...
+	if strings.Contains(sshCmd, "base64 -d") {
+		re := regexp.MustCompile(`echo\s+'([A-Za-z0-9+/=]+)'\s+\|\s+base64`)
+		matches := re.FindStringSubmatch(sshCmd)
+		if len(matches) > 1 {
+			yamlBytes, decErr := base64.StdEncoding.DecodeString(matches[1])
+			if decErr != nil {
+				return "", fmt.Errorf("decode base64 yaml: %v", decErr)
+			}
+			tmpYAML, yErr := os.CreateTemp("", "resource-*.yaml")
+			if yErr != nil {
+				return "", fmt.Errorf("temp yaml: %v", yErr)
+			}
+			defer os.Remove(tmpYAML.Name())
+			tmpYAML.Write(yamlBytes)
+			tmpYAML.Close()
+			return kubectlRun(tmpKC.Name(), "apply", "-f", tmpYAML.Name(), "--validate=false")
+		}
+	}
+
+	// Strip SSH/k0s prefix to get pure kubectl args
+	kubectlPart := sshCmd
+	for _, prefix := range []string{"sudo k0s kubectl ", "k0s kubectl ", "sudo kubectl ", "kubectl "} {
+		if strings.HasPrefix(kubectlPart, prefix) {
+			kubectlPart = strings.TrimPrefix(kubectlPart, prefix)
+			break
+		}
+	}
+
+	// Handle "| wc -l" â€“ count lines in Go instead
+	if strings.Contains(kubectlPart, "| wc -l") {
+		kubectlPart = strings.Split(kubectlPart, "|")[0]
+		kubectlPart = strings.ReplaceAll(kubectlPart, "2>/dev/null", "")
+		kubectlPart = strings.TrimSpace(kubectlPart)
+		args := strings.Fields(kubectlPart)
+		out, runErr := kubectlRun(tmpKC.Name(), args...)
+		if runErr != nil {
+			return "0", nil
+		}
+		trimmed := strings.TrimSpace(out)
+		if trimmed == "" {
+			return "0", nil
+		}
+		count := len(strings.Split(trimmed, "\n"))
+		return strconv.Itoa(count), nil
+	}
+
+	// Handle "|| ..." fallback patterns â€“ use only the first command
+	if strings.Contains(kubectlPart, "||") {
+		kubectlPart = strings.Split(kubectlPart, "||")[0]
+	}
+
+	// Strip any remaining shell redirects
+	kubectlPart = strings.ReplaceAll(kubectlPart, "2>/dev/null", "")
+	kubectlPart = strings.TrimSpace(kubectlPart)
+
+	args := strings.Fields(kubectlPart)
+	log.Printf("[kubectl] running: kubectl %s", strings.Join(args, " "))
+	return kubectlRun(tmpKC.Name(), args...)
+}
+
+// kubectlRun runs kubectl with the given kubeconfig file and args.
+func kubectlRun(kubeconfigPath string, args ...string) (string, error) {
+	fullArgs := append([]string{"--kubeconfig=" + kubeconfigPath}, args...)
+	cmd := exec.Command("kubectl", fullArgs...)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if stderr.Len() > 0 {
+		log.Printf("[kubectl] stderr: %s", strings.TrimSpace(stderr.String()))
+	}
+	if err != nil {
+		// Retry with --insecure-skip-tls-verify in case TLS cert verification is the issue
+		log.Printf("[kubectl] first attempt failed (%v), retrying with --insecure-skip-tls-verify", err)
+		fullArgs2 := append([]string{"--kubeconfig=" + kubeconfigPath, "--insecure-skip-tls-verify=true"}, args...)
+		cmd2 := exec.Command("kubectl", fullArgs2...)
+		var stdout2, stderr2 strings.Builder
+		cmd2.Stdout = &stdout2
+		cmd2.Stderr = &stderr2
+		err2 := cmd2.Run()
+		if stderr2.Len() > 0 {
+			log.Printf("[kubectl] retry stderr: %s", strings.TrimSpace(stderr2.String()))
+		}
+		if err2 != nil {
+			return stdout2.String(), fmt.Errorf("kubectl error: %v\nstderr: %s", err2, stderr2.String())
+		}
+		return stdout2.String(), nil
+	}
+	return stdout.String(), nil
+}
+
+// clusterSSHRun runs a kubectl command on a cluster.
+// If the cluster has a stored kubeconfig (imported cluster), it uses local kubectl.
+// Otherwise it falls back to SSH (k0s provisioned cluster).
 func clusterSSHRun(clusterID string, cmd string) (string, error) {
 	var ipAddress, username string
-	var password, authMethod, sshKey sql.NullString
+	var password, authMethod, sshKey, storedKubeconfig sql.NullString
 
 	err := database.DB.QueryRow(
-		"SELECT ip_address, username, COALESCE(password,''), COALESCE(auth_method,'password'), COALESCE(ssh_key,'') FROM k0s_clusters WHERE id = ?",
+		"SELECT ip_address, username, COALESCE(password,''), COALESCE(auth_method,'password'), COALESCE(ssh_key,''), COALESCE(kubeconfig,'') FROM k0s_clusters WHERE id = ?",
 		clusterID,
-	).Scan(&ipAddress, &username, &password, &authMethod, &sshKey)
+	).Scan(&ipAddress, &username, &password, &authMethod, &sshKey, &storedKubeconfig)
 	if err != nil {
 		return "", fmt.Errorf("cluster not found: %v", err)
 	}
 
+	// Imported / external cluster â€“ use stored kubeconfig via local kubectl
+	if storedKubeconfig.Valid && strings.TrimSpace(storedKubeconfig.String) != "" {
+		return runKubectlWithKubeconfig(storedKubeconfig.String, cmd)
+	}
+
+	// k0s provisioned cluster â€“ use SSH
 	auth := authMethod.String
 	if auth == "" {
 		auth = "password"
@@ -68,7 +184,7 @@ func clusterSSHRun(clusterID string, cmd string) (string, error) {
 // Non-admin users only have access to assigned namespaces
 func checkNamespaceAccess(user User, clusterID int, namespace string) bool {
 	// Admin users have access to all namespaces
-	if user.Role == "admin" {
+	if HasRole(user.Role, "admin") {
 		return true
 	}
 
@@ -114,7 +230,7 @@ func GetClusterNamespaces(w http.ResponseWriter, r *http.Request) {
 
 	// Check if user is admin or not - if not admin, filter namespaces
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role != "admin" {
+	if ok && !HasRole(user.Role, "admin") {
 		// Non-admin user: get assigned namespaces for this cluster
 		rows, err := database.DB.Query(
 			"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
@@ -163,7 +279,7 @@ func GetClusterNamespaces(w http.ResponseWriter, r *http.Request) {
 func CreateNamespace(w http.ResponseWriter, r *http.Request) {
 	// Check user role - view role cannot create
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role == "view" {
+	if ok && HasRole(user.Role, "user_k8s_view") {
 		http.Error(w, "view-only users cannot create resources", http.StatusForbidden)
 		return
 	}
@@ -192,7 +308,7 @@ func CreateNamespace(w http.ResponseWriter, r *http.Request) {
 func DeleteNamespaceResource(w http.ResponseWriter, r *http.Request) {
 	// Check user role - view role cannot delete
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role == "view" {
+	if ok && HasRole(user.Role, "user_k8s_view") {
 		http.Error(w, "view-only users cannot delete resources", http.StatusForbidden)
 		return
 	}
@@ -203,7 +319,7 @@ func DeleteNamespaceResource(w http.ResponseWriter, r *http.Request) {
 	ns := vars["ns"]
 
 	// Non-admin users can only delete namespaces they have access to
-	if ok && user.Role != "admin" {
+	if ok && !HasRole(user.Role, "admin") {
 		if !checkNamespaceAccess(user, clusterIDInt, ns) {
 			http.Error(w, "access denied: namespace not assigned to user", http.StatusForbidden)
 			return
@@ -235,7 +351,7 @@ func UpdateNamespaceLabels(w http.ResponseWriter, r *http.Request) {
 
 	// Non-admin users can only access namespaces they have been assigned to
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role != "admin" {
+	if ok && !HasRole(user.Role, "admin") {
 		if !checkNamespaceAccess(user, clusterIDInt, ns) {
 			http.Error(w, "access denied: namespace not assigned to user", http.StatusForbidden)
 			return
@@ -261,6 +377,41 @@ func UpdateNamespaceLabels(w http.ResponseWriter, r *http.Request) {
 		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
 	}
 	cmd := fmt.Sprintf("sudo k0s kubectl label namespace %s %s --overwrite", ns, strings.Join(parts, " "))
+	out, err := clusterSSHRun(clusterID, cmd)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"output": out})
+}
+
+// UpdateNodeLabels patches labels on a node
+// PATCH /api/k0s/clusters/{id}/k8s/nodes/{name}  body: {"labels":{"k":"v"}}
+func UpdateNodeLabels(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	clusterID := vars["id"]
+	nodeName := vars["name"]
+
+	var body struct {
+		Labels map[string]string `json:"labels"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	if len(body.Labels) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"output": "no labels provided"})
+		return
+	}
+
+	var parts []string
+	for k, v := range body.Labels {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+	}
+	cmd := fmt.Sprintf("sudo k0s kubectl label node %s %s --overwrite", nodeName, strings.Join(parts, " "))
 	out, err := clusterSSHRun(clusterID, cmd)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -297,7 +448,7 @@ func GetAllResourceQuotas(w http.ResponseWriter, r *http.Request) {
 
 	// Filter quotas for non-admin users
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role != "admin" {
+	if ok && !HasRole(user.Role, "admin") {
 		// Get assigned namespaces
 		rows, err := database.DB.Query(
 			"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
@@ -483,7 +634,7 @@ func GetNamespacePodUsage(w http.ResponseWriter, r *http.Request) {
 
 	// Filter namespaces for non-admin users
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role != "admin" {
+	if ok && !HasRole(user.Role, "admin") {
 		// Get assigned namespaces for non-admin user
 		rows, err := database.DB.Query(
 			"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
@@ -534,7 +685,7 @@ func GetNamespacePodUsage(w http.ResponseWriter, r *http.Request) {
 func SetNamespaceQuota(w http.ResponseWriter, r *http.Request) {
 	// Check user role - view role cannot modify quotas
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role == "view" {
+	if ok && HasRole(user.Role, "user_k8s_view") {
 		http.Error(w, "view-only users cannot modify resource quotas", http.StatusForbidden)
 		return
 	}
@@ -545,7 +696,7 @@ func SetNamespaceQuota(w http.ResponseWriter, r *http.Request) {
 	ns := vars["ns"]
 
 	// Non-admin users can only modify quotas for namespaces they have been assigned to
-	if ok && user.Role != "admin" {
+	if ok && !HasRole(user.Role, "admin") {
 		if !checkNamespaceAccess(user, clusterIDInt, ns) {
 			http.Error(w, "access denied: namespace not assigned to user", http.StatusForbidden)
 			return
@@ -617,10 +768,84 @@ func GetClusterNodes2(w http.ResponseWriter, r *http.Request) {
 
 	out, err := clusterSSHRun(clusterID, "sudo k0s kubectl get nodes -o json")
 	if err != nil {
-		log.Printf("[ClusterAdmin] GetNodes error: %v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("[ClusterAdmin] GetNodes error for cluster %s: %v", clusterID, err)
+		// Return empty items instead of 500 so the UI shows "No nodes found" gracefully
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items":[]}`))
 		return
 	}
+
+	preview := out
+	if len(preview) > 300 {
+		preview = preview[:300]
+	}
+	log.Printf("[ClusterAdmin] GetNodes cluster=%s response_len=%d content=%s", clusterID, len(out), preview)
+
+	// Ensure the response has an `items` key; kubectl returns NodeList with items
+	var check struct {
+		Items json.RawMessage `json:"items"`
+	}
+	if parseErr := json.Unmarshal([]byte(out), &check); parseErr != nil || check.Items == nil {
+		log.Printf("[ClusterAdmin] GetNodes unexpected format for cluster %s: %v", clusterID, parseErr)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items":[]}`))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(out))
+}
+
+// GetNodeMetrics returns node resource usage metrics
+// GET /api/k0s/clusters/{id}/k8s/nodes/metrics
+func GetNodeMetrics(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	clusterID := vars["id"]
+
+	out, err := clusterSSHRun(clusterID, "sudo k0s kubectl get --raw /apis/metrics.k8s.io/v1beta1/nodes")
+	if err != nil {
+		log.Printf("[ClusterAdmin] GetNodeMetrics error for cluster %s: %v", clusterID, err)
+		// Metrics server might not be installed; return empty
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items":[]}`))
+		return
+	}
+
+	log.Printf("[ClusterAdmin] GetNodeMetrics cluster=%s response_len=%d", clusterID, len(out))
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(out))
+}
+
+// GetPodMetrics returns pod resource usage metrics for a namespace
+// GET /api/k0s/clusters/{id}/k8s/pods-metrics?namespace=xxx
+func GetPodMetrics(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	clusterID := vars["id"]
+	namespace := r.URL.Query().Get("namespace")
+	
+	// Build the correct API path for metrics
+	var apiPath string
+	if namespace == "" || namespace == "all" {
+		// Get metrics from all namespaces
+		apiPath = "/apis/metrics.k8s.io/v1beta1/pods"
+	} else {
+		// Get metrics from specific namespace
+		apiPath = fmt.Sprintf("/apis/metrics.k8s.io/v1beta1/namespaces/%s/pods", namespace)
+	}
+	
+	cmd := fmt.Sprintf("sudo k0s kubectl get --raw %s", apiPath)
+	
+	out, err := clusterSSHRun(clusterID, cmd)
+	if err != nil {
+		log.Printf("[ClusterAdmin] GetPodMetrics error for cluster %s namespace %s: %v", clusterID, namespace, err)
+		// Metrics server might not be installed or no metrics available; return empty
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"items":[]}`))
+		return
+	}
+
+	log.Printf("[ClusterAdmin] GetPodMetrics cluster=%s namespace=%s response_len=%d", clusterID, namespace, len(out))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.Write([]byte(out))
@@ -653,7 +878,7 @@ func GetClusterResources(w http.ResponseWriter, r *http.Request) {
 	user, ok := GetUserFromContext(r.Context())
 	
 	// Non-admin users: check namespace access
-	if ok && user.Role != "admin" && namespace != "" && namespace != "all" && resource != "nodes" {
+	if ok && !HasRole(user.Role, "admin") && namespace != "" && namespace != "all" && resource != "nodes" {
 		if !checkNamespaceAccess(user, clusterIDInt, namespace) {
 			http.Error(w, "access denied: namespace not assigned to user", http.StatusForbidden)
 			return
@@ -677,7 +902,7 @@ func GetClusterResources(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Filter results for non-admin users querying all namespaces
-	if ok && user.Role != "admin" && (namespace == "" || namespace == "all") && resource != "nodes" {
+	if ok && !HasRole(user.Role, "admin") && (namespace == "" || namespace == "all") && resource != "nodes" {
 		// Get assigned namespaces
 		rows, err := database.DB.Query(
 			"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
@@ -766,7 +991,7 @@ func GetClusterResourceByName(w http.ResponseWriter, r *http.Request) {
 	// Check user access to namespace
 	user, _ := GetUserFromContext(r.Context())
 	clusterIDint, _ := strconv.Atoi(clusterID)
-	if user.Role != "admin" {
+	if !HasRole(user.Role, "admin") {
 		if !checkNamespaceAccess(user, clusterIDint, namespace) {
 			http.Error(w, "Forbidden: no access to this namespace", http.StatusForbidden)
 			return
@@ -794,7 +1019,7 @@ func GetClusterResourceByName(w http.ResponseWriter, r *http.Request) {
 func DeleteClusterResource(w http.ResponseWriter, r *http.Request) {
 	// Check user role - view role cannot delete
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role == "view" {
+	if ok && HasRole(user.Role, "user_k8s_view") {
 		http.Error(w, "view-only users cannot delete resources", http.StatusForbidden)
 		return
 	}
@@ -876,18 +1101,40 @@ func GetClusterInfo(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	clusterID := vars["id"]
 
-	// Run multiple commands and aggregate
-	version, _ := clusterSSHRun(clusterID, "sudo k0s kubectl version --short 2>/dev/null || sudo k0s version")
-	nodeCount, _ := clusterSSHRun(clusterID, "sudo k0s kubectl get nodes --no-headers 2>/dev/null | wc -l")
-	nsCount, _ := clusterSSHRun(clusterID, "sudo k0s kubectl get namespaces --no-headers 2>/dev/null | wc -l")
-	podCount, _ := clusterSSHRun(clusterID, "sudo k0s kubectl get pods --all-namespaces --no-headers 2>/dev/null | wc -l")
+	countItems := func(cmd string) string {
+		out, err := clusterSSHRun(clusterID, cmd)
+		if err != nil {
+			return "0"
+		}
+		var list struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		if parseErr := json.Unmarshal([]byte(out), &list); parseErr != nil {
+			return "0"
+		}
+		return strconv.Itoa(len(list.Items))
+	}
+
+	version, _ := clusterSSHRun(clusterID, "sudo k0s kubectl version --client -o json")
+	// Parse version from JSON, fallback to raw
+	var vInfo struct {
+		ClientVersion struct{ GitVersion string `json:"gitVersion"` } `json:"clientVersion"`
+	}
+	vStr := strings.TrimSpace(version)
+	if json.Unmarshal([]byte(version), &vInfo) == nil && vInfo.ClientVersion.GitVersion != "" {
+		vStr = vInfo.ClientVersion.GitVersion
+	}
+
+	nodeCount := countItems("sudo k0s kubectl get nodes -o json")
+	nsCount := countItems("sudo k0s kubectl get namespaces -o json")
+	podCount := countItems("sudo k0s kubectl get pods --all-namespaces -o json")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"version":    strings.TrimSpace(version),
-		"node_count": strings.TrimSpace(nodeCount),
-		"ns_count":   strings.TrimSpace(nsCount),
-		"pod_count":  strings.TrimSpace(podCount),
+		"version":    vStr,
+		"node_count": nodeCount,
+		"ns_count":   nsCount,
+		"pod_count":  podCount,
 	})
 }
 
@@ -897,7 +1144,7 @@ func GetClusterInfo(w http.ResponseWriter, r *http.Request) {
 func ApplyClusterResource(w http.ResponseWriter, r *http.Request) {
 	// Check user role - view role cannot apply/create
 	user, ok := GetUserFromContext(r.Context())
-	if ok && user.Role == "view" {
+	if ok && HasRole(user.Role, "user_k8s_view") {
 		http.Error(w, "view-only users cannot create or update resources", http.StatusForbidden)
 		return
 	}
@@ -909,12 +1156,12 @@ func ApplyClusterResource(w http.ResponseWriter, r *http.Request) {
 		YAML string `json:"yaml"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		log.Printf("[ApplyClusterResource] ✗ DECODE ERROR - cluster=%s user=%s error=%v", clusterID, user.Username, err)
+		log.Printf("[ApplyClusterResource] âœ— DECODE ERROR - cluster=%s user=%s error=%v", clusterID, user.Username, err)
 		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	if strings.TrimSpace(body.YAML) == "" {
-		log.Printf("[ApplyClusterResource] ✗ EMPTY YAML - cluster=%s user=%s", clusterID, user.Username)
+		log.Printf("[ApplyClusterResource] âœ— EMPTY YAML - cluster=%s user=%s", clusterID, user.Username)
 		http.Error(w, "YAML body is empty", http.StatusBadRequest)
 		return
 	}
@@ -924,7 +1171,7 @@ func ApplyClusterResource(w http.ResponseWriter, r *http.Request) {
 	if len(yamlPreview) > 300 {
 		yamlPreview = yamlPreview[:300] + "..."
 	}
-	log.Printf("[ApplyClusterResource] ▶ START - cluster=%s user=%s\n%s", clusterID, user.Username, yamlPreview)
+	log.Printf("[ApplyClusterResource] â–¶ START - cluster=%s user=%s\n%s", clusterID, user.Username, yamlPreview)
 
 	// === SAVE YAML TO LOCAL FOLDER ===
 	// Create yaml folder if it doesn't exist
@@ -940,11 +1187,11 @@ func ApplyClusterResource(w http.ResponseWriter, r *http.Request) {
 	
 	// Save YAML to local file
 	if err := os.WriteFile(localYamlFile, []byte(body.YAML), 0644); err != nil {
-		log.Printf("[ApplyClusterResource] ✗ SAVE ERROR - failed to save YAML: %v", err)
+		log.Printf("[ApplyClusterResource] âœ— SAVE ERROR - failed to save YAML: %v", err)
 		http.Error(w, "Failed to save YAML file: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	log.Printf("[ApplyClusterResource] ✓ SAVED - YAML saved to: %s", localYamlFile)
+	log.Printf("[ApplyClusterResource] âœ“ SAVED - YAML saved to: %s", localYamlFile)
 
 	// Base64-encode to avoid shell-escaping issues
 	encoded := base64.StdEncoding.EncodeToString([]byte(body.YAML))
@@ -1012,9 +1259,9 @@ ${KUBECTL_CMD} version --client=true || echo "[WARN] Could not get client versio
 # Test connection to Kubernetes cluster
 echo "[INFO] Testing connection to Kubernetes cluster..."
 if ${KUBECTL_CMD} cluster-info &>/dev/null; then
-    echo "[✓] Successfully connected to Kubernetes cluster"
+    echo "[âœ“] Successfully connected to Kubernetes cluster"
 else
-    echo "[✗] Failed to connect to Kubernetes cluster"
+    echo "[âœ—] Failed to connect to Kubernetes cluster"
     echo "[INFO] Checking kubeconfig..."
     ${KUBECTL_CMD} config view || echo "[WARN] Could not display kubeconfig"
     exit 1
@@ -1027,16 +1274,16 @@ ${KUBECTL_CMD} cluster-info
 # Test API server connectivity
 echo "[INFO] Testing API server..."
 if ${KUBECTL_CMD} api-resources &>/dev/null; then
-    echo "[✓] API server is accessible"
+    echo "[âœ“] API server is accessible"
 else
-    echo "[✗] Could not access API server"
+    echo "[âœ—] Could not access API server"
     exit 1
 fi
 
 # Save YAML to file
 echo "[INFO] Saving YAML to remote server: ${YAML_FILENAME}..."
 echo '%s' | base64 -d > "${YAML_FILENAME}"
-echo "[✓] YAML saved to: ${YAML_FILENAME}"
+echo "[âœ“] YAML saved to: ${YAML_FILENAME}"
 echo "[INFO] YAML content:"
 echo "---"
 cat "${YAML_FILENAME}"
@@ -1044,9 +1291,9 @@ echo "---"
 
 # Apply the YAML with --validate=false to skip OpenAPI schema validation
 echo ""
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║ APPLYING RESOURCE                                              ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
+echo "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
+echo "â•‘ APPLYING RESOURCE                                              â•‘"
+echo "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
 APPLY_OUTPUT=$(${KUBECTL_CMD} apply -f "${YAML_FILENAME}" --validate=false 2>&1)
 APPLY_EXITCODE=$?
 echo "${APPLY_OUTPUT}"
@@ -1062,9 +1309,9 @@ echo "Extracted Info: namespace=${NAMESPACE}, kind=${KIND}, name=${NAME}"
 # Debug: Only run if apply was successful or if it's a deployment
 if [ "${KIND}" = "Deployment" ] || [ "${APPLY_EXITCODE}" -eq 0 ]; then
     echo ""
-    echo "╔════════════════════════════════════════════════════════════════╗"
-    echo "║ DEBUGGING: Resource Status & Logs                             ║"
-    echo "╚════════════════════════════════════════════════════════════════╝"
+    echo "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
+    echo "â•‘ DEBUGGING: Resource Status & Logs                             â•‘"
+    echo "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
     
     # Wait a bit for resource to start
     sleep 2
@@ -1072,22 +1319,22 @@ if [ "${KIND}" = "Deployment" ] || [ "${APPLY_EXITCODE}" -eq 0 ]; then
     # 1. Check Deployment/Pod Status
     if [ "${KIND}" = "Deployment" ]; then
         echo ""
-        echo "━━━ DEPLOYMENT STATUS ━━━"
+        echo "â”â”â” DEPLOYMENT STATUS â”â”â”"
         ${KUBECTL_CMD} get deployment -n "${NAMESPACE}" "${NAME}" -o wide 2>/dev/null || echo "[WARN] Could not get deployment"
         
         echo ""
-        echo "━━━ DEPLOYMENT DESCRIBE ━━━"
+        echo "â”â”â” DEPLOYMENT DESCRIBE â”â”â”"
         ${KUBECTL_CMD} describe deployment -n "${NAMESPACE}" "${NAME}" 2>/dev/null || echo "[WARN] Could not describe deployment"
         
         # Get replica sets
         echo ""
-        echo "━━━ REPLICA SETS ━━━"
+        echo "â”â”â” REPLICA SETS â”â”â”"
         ${KUBECTL_CMD} get replicasets -n "${NAMESPACE}" -l app="${NAME}" 2>/dev/null || echo "[WARN] Could not get replicasets"
     fi
     
     # 2. Check Pods Status
     echo ""
-    echo "━━━ POD STATUS ━━━"
+    echo "â”â”â” POD STATUS â”â”â”"
     POD_OUTPUT=$(${KUBECTL_CMD} get pods -n "${NAMESPACE}" -l app="${NAME}" -o wide 2>/dev/null)
     if [ -n "${POD_OUTPUT}" ]; then
         echo "${POD_OUTPUT}"
@@ -1097,29 +1344,29 @@ if [ "${KIND}" = "Deployment" ] || [ "${APPLY_EXITCODE}" -eq 0 ]; then
         
         if [ -n "${POD_NAME}" ] && [ "${POD_NAME}" != "NAME" ]; then
             echo ""
-            echo "━━━ POD DESCRIBE (${POD_NAME}) ━━━"
+            echo "â”â”â” POD DESCRIBE (${POD_NAME}) â”â”â”"
             ${KUBECTL_CMD} describe pod -n "${NAMESPACE}" "${POD_NAME}" 2>/dev/null || echo "[WARN] Could not describe pod"
             
             echo ""
-            echo "━━━ POD LOGS (${POD_NAME}) ━━━"
+            echo "â”â”â” POD LOGS (${POD_NAME}) â”â”â”"
             ${KUBECTL_CMD} logs -n "${NAMESPACE}" "${POD_NAME}" --tail=50 2>/dev/null || echo "[WARN] Could not get pod logs"
             
             echo ""
-            echo "━━━ POD EVENTS (${POD_NAME}) ━━━"
+            echo "â”â”â” POD EVENTS (${POD_NAME}) â”â”â”"
             ${KUBECTL_CMD} get events -n "${NAMESPACE}" --field-selector involvedObject.name="${POD_NAME}" 2>/dev/null || echo "[WARN] Could not get pod events"
         fi
     else
-        echo "[⚠] No pods found for app=${NAME}"
+        echo "[âš ] No pods found for app=${NAME}"
     fi
     
     # 3. Check Namespace Events
     echo ""
-    echo "━━━ NAMESPACE EVENTS (Recent) ━━━"
+    echo "â”â”â” NAMESPACE EVENTS (Recent) â”â”â”"
     ${KUBECTL_CMD} get events -n "${NAMESPACE}" --sort-by='.lastTimestamp' 2>/dev/null | tail -10 || echo "[WARN] Could not get namespace events"
     
     # 4. Check Resource Quota
     echo ""
-    echo "━━━ RESOURCE QUOTA ━━━"
+    echo "â”â”â” RESOURCE QUOTA â”â”â”"
     QUOTA_OUTPUT=$(${KUBECTL_CMD} describe resourcequota -n "${NAMESPACE}" 2>/dev/null)
     if [ -n "${QUOTA_OUTPUT}" ]; then
         echo "${QUOTA_OUTPUT}"
@@ -1129,22 +1376,22 @@ if [ "${KIND}" = "Deployment" ] || [ "${APPLY_EXITCODE}" -eq 0 ]; then
     
     # 5. Check Namespace Resource Usage
     echo ""
-    echo "━━━ NAMESPACE RESOURCE USAGE ━━━"
+    echo "â”â”â” NAMESPACE RESOURCE USAGE â”â”â”"
     echo "Running Pods in namespace ${NAMESPACE}:"
     ${KUBECTL_CMD} get pods -n "${NAMESPACE}" --all-containers=true 2>/dev/null | head -20 || echo "[WARN] Could not get pod list"
     
     # 6. Check RBAC if applicable
     echo ""
-    echo "━━━ SERVICE ACCOUNT INFO ━━━"
+    echo "â”â”â” SERVICE ACCOUNT INFO â”â”â”"
     SA=$(grep -E "serviceAccountName:" "${YAML_FILENAME}" | head -1 | awk '{print $NF}' || echo "default")
     ${KUBECTL_CMD} get serviceaccount -n "${NAMESPACE}" "${SA}" -o yaml 2>/dev/null || echo "[INFO] Using default service account"
 fi
 
 echo ""
-echo "╔════════════════════════════════════════════════════════════════╗"
-echo "║ SUCCESS - Resource applied and saved                           ║"
-echo "║ Saved to: ${YAML_FILENAME}                                    ║"
-echo "╚════════════════════════════════════════════════════════════════╝"
+echo "â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—"
+echo "â•‘ SUCCESS - Resource applied and saved                           â•‘"
+echo "â•‘ Saved to: ${YAML_FILENAME}                                    â•‘"
+echo "â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•"
 `, encoded)
 
 	// Write script to /tmp and execute it
@@ -1153,12 +1400,12 @@ echo "╚═══════════════════════�
 	log.Printf("[ApplyClusterResource] Running kubectl apply with comprehensive debugging on cluster %s", clusterID)
 	output, err := clusterSSHRun(clusterID, cmd)
 	if err != nil {
-		log.Printf("[ApplyClusterResource] ✗ SSH ERROR - cluster=%s error=%v\nOutput: %s", clusterID, err, output)
+		log.Printf("[ApplyClusterResource] âœ— SSH ERROR - cluster=%s error=%v\nOutput: %s", clusterID, err, output)
 		http.Error(w, "Failed to apply resource. Error: "+err.Error()+"\n\n--- DEBUG OUTPUT ---\n"+output, http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("[ApplyClusterResource] ✓ SUCCESS - cluster=%s\nLocal file: %s\nOutput:\n%s", clusterID, localYamlFile, output)
+	log.Printf("[ApplyClusterResource] âœ“ SUCCESS - cluster=%s\nLocal file: %s\nOutput:\n%s", clusterID, localYamlFile, output)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1181,7 +1428,7 @@ func GetPodDescribe(w http.ResponseWriter, r *http.Request) {
 	// Check user access
 	user, _ := GetUserFromContext(r.Context())
 	clusterIDint, _ := strconv.Atoi(clusterID)
-	if user.Role != "admin" {
+	if !HasRole(user.Role, "admin") {
 		if !checkNamespaceAccess(user, clusterIDint, namespace) {
 			http.Error(w, "Forbidden: no access to this namespace", http.StatusForbidden)
 			return
@@ -1213,7 +1460,7 @@ func GetPodEvents(w http.ResponseWriter, r *http.Request) {
 	// Check user access
 	user, _ := GetUserFromContext(r.Context())
 	clusterIDint, _ := strconv.Atoi(clusterID)
-	if user.Role != "admin" {
+	if !HasRole(user.Role, "admin") {
 		if !checkNamespaceAccess(user, clusterIDint, namespace) {
 			http.Error(w, "Forbidden: no access to this namespace", http.StatusForbidden)
 			return
@@ -1232,4 +1479,6 @@ func GetPodEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte(output))
 }
+
+
 

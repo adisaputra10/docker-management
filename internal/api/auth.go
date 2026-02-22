@@ -153,3 +153,13 @@ func GetUserFromContext(ctx context.Context) (User, bool) {
 	user, ok := ctx.Value(UserContextKey).(User)
 	return user, ok
 }
+
+// HasRole checks if a (possibly comma-separated) role string contains the target role.
+func HasRole(roleStr, target string) bool {
+	for _, r := range strings.Split(roleStr, ",") {
+		if strings.TrimSpace(r) == target {
+			return true
+		}
+	}
+	return false
+}

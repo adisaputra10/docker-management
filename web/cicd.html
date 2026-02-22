@@ -1,0 +1,2055 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>CI/CD — Docker Manager</title>
+    <link rel="stylesheet" href="modern_ui.css"/>
+    <style>
+        :root { --sidebar-w: 220px; --topbar-h: 60px; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background: #0f1117;
+            color: #e2e8f0;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* TOP BAR */
+        .topbar {
+            height: var(--topbar-h);
+            background: #1a1f2e;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            display: flex;
+            align-items: center;
+            padding: 0 1.5rem;
+            gap: 1rem;
+            flex-shrink: 0;
+        }
+        .topbar-back {
+            background: rgba(255,255,255,0.07);
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            padding: 0.4rem 0.8rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .topbar-back:hover { background: rgba(255,255,255,0.12); color: #e2e8f0; }
+        .topbar-title { font-size: 1rem; font-weight: 600; color: #e2e8f0; flex: 1; }
+        .topbar-user { font-size: 0.8rem; color: #64748b; }
+
+        /* LAYOUT */
+        .layout { display: flex; flex: 1; overflow: hidden; }
+
+        /* SIDEBAR */
+        .sidebar {
+            width: var(--sidebar-w);
+            background: #1a1f2e;
+            border-right: 1px solid rgba(255,255,255,0.07);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            flex-shrink: 0;
+        }
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            font-size: 0.75rem;
+            color: #64748b;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        .sidebar-menu { padding: 0.5rem 0; }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.6rem 1rem;
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            border-radius: 0;
+            transition: background 0.15s, color 0.15s;
+            border: none;
+            width: 100%;
+            text-align: left;
+            background: none;
+        }
+        .menu-item:hover { background: rgba(255,255,255,0.05); color: #e2e8f0; }
+        .menu-item.active { background: rgba(99,102,241,0.15); color: #818cf8; border-right: 2px solid #818cf8; }
+        .menu-item svg { flex-shrink: 0; opacity: 0.7; }
+
+        /* MAIN */
+        .main { flex: 1; overflow-y: auto; padding: 1.5rem; display: flex; flex-direction: column; gap: 1.5rem; }
+
+        /* CARDS */
+        .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
+        .stat-card {
+            background: #1a1f2e;
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 12px;
+            padding: 1rem 1.2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .stat-label { font-size: 0.75rem; color: #64748b; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+        .stat-value { font-size: 1.5rem; font-weight: 700; color: #e2e8f0; }
+        .stat-sub  { font-size: 0.75rem; color: #94a3b8; }
+
+        /* TABLE SECTION */
+        .section-card {
+            background: #1a1f2e;
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .section-header {
+            padding: 0.9rem 1.2rem;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .section-title { font-size: 0.9rem; font-weight: 600; color: #e2e8f0; }
+        .btn { padding: 0.4rem 0.9rem; border-radius: 7px; border: none; cursor: pointer; font-size: 0.8rem; font-weight: 500; transition: all 0.15s; }
+        .btn-primary { background: #4f46e5; color: #fff; }
+        .btn-primary:hover { background: #4338ca; }
+        .btn-success { background: #22c55e; color: #fff; }
+        .btn-success:hover { background: #16a34a; }
+        .btn-danger  { background: #ef4444; color: #fff; }
+        .btn-danger:hover  { background: #dc2626; }
+        .btn-ghost   { background: rgba(255,255,255,0.07); color: #94a3b8; }
+        .btn-ghost:hover   { background: rgba(255,255,255,0.12); color: #e2e8f0; }
+        .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.75rem; }
+
+        table { width: 100%; border-collapse: collapse; }
+        thead th {
+            padding: 0.6rem 1rem;
+            text-align: left;
+            font-size: 0.75rem;
+            color: #64748b;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        tbody tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.1s; }
+        tbody tr:last-child { border-bottom: none; }
+        tbody tr:hover { background: rgba(255,255,255,0.03); }
+        tbody td { padding: 0.65rem 1rem; font-size: 0.85rem; color: #cbd5e1; }
+
+        /* STATUS BADGES */
+        .badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.6rem; border-radius: 20px; font-size: 0.7rem; font-weight: 600; }
+        .badge-success { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .badge-running { background: rgba(59,130,246,0.15); color: #3b82f6; }
+        .badge-failed  { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .badge-pending { background: rgba(234,179,8,0.15); color: #eab308; }
+        .badge-stopped { background: rgba(100,116,139,0.15); color: #64748b; }
+
+        /* EMPTY STATE */
+        .empty-state { padding: 3rem; text-align: center; color: #64748b; }
+        .empty-icon { font-size: 2.5rem; margin-bottom: 0.8rem; }
+
+        /* MODAL */
+        .modal-overlay {
+            display: none;
+            position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.open { display: flex; }
+        .modal-box {
+            background: #1a1f2e;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 14px;
+            width: 100%;
+            max-width: 520px;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 1.5rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .modal-title { font-size: 1rem; font-weight: 600; color: #e2e8f0; margin-bottom: 1.2rem; }
+        .form-group { margin-bottom: 0.9rem; }
+        .form-label { display: block; font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.3rem; }
+        .form-input {
+            width: 100%;
+            padding: 0.55rem 0.75rem;
+            background: #0f1117;
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #e2e8f0;
+            border-radius: 8px;
+            outline: none;
+            font-size: 0.85rem;
+        }
+        .form-input:focus { border-color: #4f46e5; }
+        .form-error { font-size: 0.8rem; color: #f87171; min-height: 1.2em; margin-top: 0.5rem; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.2rem; }
+
+        /* PIPELINE STEP VIZ */
+        .pipeline-steps { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+        .pipeline-step {
+            display: flex; align-items: center; gap: 0.4rem;
+            padding: 0.25rem 0.7rem;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 600;
+        }
+        .step-arrow { color: #475569; font-size: 0.8rem; margin: 0 0.2rem; }
+        .step-success  { background: rgba(34,197,94,0.15); color: #22c55e; }
+        .step-running  { background: rgba(59,130,246,0.15); color: #3b82f6; }
+        .step-failed   { background: rgba(239,68,68,0.15); color: #ef4444; }
+        .step-pending  { background: rgba(100,116,139,0.1); color: #94a3b8; }
+
+        /* PROGRESS BAR */
+        .progress-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.08); overflow: hidden; margin-top: 0.3rem; }
+        .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #4f46e5, #818cf8); transition: width 0.5s; }
+
+        /* NO-VIEW FLAG */
+        .cicd-view-hidden { display: none !important; }
+
+        /* WORKSPACE SELECTOR */
+        .ws-selector-wrap {
+            display: flex; align-items: center; gap: 0.5rem;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 0.3rem 0.75rem;
+            font-size: 0.82rem;
+            color: #94a3b8;
+        }
+        .ws-selector-wrap svg { flex-shrink: 0; opacity: 0.6; }
+        .ws-selector-wrap select {
+            background: transparent;
+            border: none;
+            color: #e2e8f0;
+            font-size: 0.82rem;
+            outline: none;
+            cursor: pointer;
+            min-width: 120px;
+        }
+        .ws-selector-wrap select option { background: #1a1f2e; }
+
+        /* USER CHIP */
+        .user-chip {
+            display: inline-flex; align-items: center; gap: 0.4rem;
+            background: rgba(99,102,241,0.12);
+            border: 1px solid rgba(99,102,241,0.25);
+            border-radius: 20px;
+            padding: 0.2rem 0.7rem;
+            font-size: 0.75rem;
+            color: #a5b4fc;
+        }
+        .user-chip .rm { cursor:pointer; opacity:0.6; font-size:0.85rem; }
+        .user-chip .rm:hover { opacity:1; color:#f87171; }
+
+        /* SIDEBAR DIVIDER */
+        .menu-divider { height:1px; background:rgba(255,255,255,0.06); margin:0.4rem 0; }
+    </style>
+</head>
+<body>
+
+<!-- TOP BAR -->
+<div class="topbar">
+    <a href="index.html" class="topbar-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+    </a>
+    <div class="topbar-title">🚀 CI/CD Dashboard</div>
+    <div class="ws-selector-wrap">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+        <span style="color:#64748b">Workspace:</span>
+        <select id="ws-select" onchange="switchWorkspace(this.value)">
+            <option value="">— select —</option>
+        </select>
+    </div>
+    <div class="topbar-user" id="topbar-user">Loading...</div>
+</div>
+
+<!-- LAYOUT -->
+<div class="layout">
+
+    <!-- SIDEBAR -->
+    <nav class="sidebar">
+        <div class="sidebar-header">CI/CD Menu</div>
+        <div class="sidebar-menu">
+            <button class="menu-item active" id="menu-overview" onclick="showSection('overview')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                Overview
+            </button>
+            <button class="menu-item" id="menu-pipelines" onclick="showSection('pipelines')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+                Pipelines
+            </button>
+            <button class="menu-item" id="menu-builds" onclick="showSection('builds')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                Build History
+            </button>
+            <button class="menu-item" id="menu-deployments" onclick="showSection('deployments')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                Deployments
+            </button>
+            <button class="menu-item" id="menu-repos" onclick="showSection('repos')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+                Repositories
+            </button>
+            <button class="menu-item" id="menu-secrets" onclick="showSection('secrets')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                Secrets / Env
+            </button>
+            <button class="menu-item" id="menu-registry" onclick="showSection('registry')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                Registry
+            </button>
+            <div class="menu-divider"></div>
+            <button class="menu-item" id="menu-workspace" onclick="showSection('workspace')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+                Workspaces
+            </button>
+            <button class="menu-item" id="menu-wsusers" onclick="showSection('wsusers')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Users
+            </button>
+            <button class="menu-item" id="menu-workers" onclick="showSection('workers')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/><circle cx="12" cy="10" r="2"/><path d="M6 10h2M16 10h2"/></svg>
+                Workers
+            </button>
+        </div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="main" id="main-content">
+
+        <!-- OVERVIEW SECTION -->
+        <div id="section-overview">
+            <div class="stat-grid" id="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Pipelines</div>
+                    <div class="stat-value" id="stat-pipelines">0</div>
+                    <div class="stat-sub">registered</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Running Builds</div>
+                    <div class="stat-value" style="color:#3b82f6" id="stat-running">0</div>
+                    <div class="stat-sub">in progress</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Success Today</div>
+                    <div class="stat-value" style="color:#22c55e" id="stat-success">0</div>
+                    <div class="stat-sub">passed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Failed Today</div>
+                    <div class="stat-value" style="color:#ef4444" id="stat-failed">0</div>
+                    <div class="stat-sub">failed builds</div>
+                </div>
+            </div>
+
+            <!-- Recent Activity -->
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">Recent Activity</span>
+                    <button class="btn btn-ghost btn-sm" onclick="loadBuilds()">↻ Refresh</button>
+                </div>
+                <div id="recent-activity-body">
+                    <div class="empty-state">
+                        <div class="empty-icon">🚀</div>
+                        <div>No recent activity. Create a pipeline to get started.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- PIPELINES SECTION -->
+        <div id="section-pipelines" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">Pipelines</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openPipelineModal()">+ New Pipeline</button>
+                </div>
+                <div id="pipelines-body">
+                    <div class="empty-state">
+                        <div class="empty-icon">⚙️</div>
+                        <div>No pipelines yet.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- BUILD HISTORY SECTION -->
+        <div id="section-builds" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">Build History</span>
+                    <button class="btn btn-ghost btn-sm" onclick="loadBuilds()">↻ Refresh</button>
+                </div>
+                <div id="builds-body">
+                    <div class="empty-state">
+                        <div class="empty-icon">📋</div>
+                        <div>No builds yet. Trigger a pipeline to start.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DEPLOYMENTS SECTION -->
+        <div id="section-deployments" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">Deployment History</span>
+                    <button class="btn btn-ghost btn-sm" onclick="loadDeploymentHistory()">↻ Refresh</button>
+                </div>
+                <div id="deployments-body">
+                    <div class="empty-state">
+                        <div class="empty-icon">📦</div>
+                        <div>No deployment records found.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- REPOSITORIES SECTION -->
+        <div id="section-repos" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">Repositories</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openRepoModal()">+ Connect Repo</button>
+                </div>
+                <div id="repos-body">
+                    <div class="empty-state">
+                        <div class="empty-icon">🔗</div>
+                        <div>No repositories connected. Click "Connect Repo" to add one.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- REGISTRY SECTION -->
+        <div id="section-registry" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">🗄️ Container Registries</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openRegistryModal()">+ Add Registry</button>
+                </div>
+                <div id="registry-body">
+                    <div class="empty-state">
+                        <div class="empty-icon">🗄️</div>
+                        <div>No registries added. Connect a registry to push/pull images in your pipelines.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECRETS SECTION -->
+        <div id="section-secrets" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">Secrets &amp; Environment Variables</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openSecretModal()">+ Add Secret</button>
+                </div>
+                <div id="secrets-body">
+                    <div class="empty-state"><div class="empty-icon">🔒</div><div>No secrets defined.</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- WORKSPACE SECTION -->
+        <div id="section-workspace" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">🗂️ Workspaces</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openWorkspaceModal()">+ New Workspace</button>
+                </div>
+                <div id="workspace-body">
+                    <div class="empty-state"><div class="empty-icon">🗂️</div><div>No workspaces yet. Create one to get started.</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- USERS (per workspace) SECTION -->
+        <div id="section-wsusers" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <div>
+                        <span class="section-title">👥 Users</span>
+                        <span id="wsusers-ws-label" style="font-size:0.78rem;color:#64748b;margin-left:0.6rem"></span>
+                    </div>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openAssignUserModal()">+ Assign User</button>
+                </div>
+                <div id="wsusers-body">
+                    <div class="empty-state"><div class="empty-icon">👥</div><div>Select a workspace first, then assign users.</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- WORKERS SECTION (admin only) -->
+        <div id="section-workers" style="display:none">
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">🖥️ Build Workers</span>
+                    <button class="btn btn-primary btn-sm" onclick="openWorkerModal()">+ Add Worker</button>
+                </div>
+                <div id="workers-body">
+                    <div class="empty-state"><div class="empty-icon">🖥️</div><div>No workers configured. Add a VM worker to run pipeline builds via SSH.</div></div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- WORKER MODAL -->
+<div class="modal-overlay" id="worker-modal">
+    <div class="modal-box" style="max-width:560px">
+        <div class="modal-title">🖥️ Add Build Worker</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 1rem">
+            <div class="form-group" style="grid-column:1/-1">
+                <label class="form-label">Worker Name *</label>
+                <input class="form-input" id="wk-name" type="text" placeholder="e.g. build-agent-01" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Host / IP *</label>
+                <input class="form-input" id="wk-host" type="text" placeholder="192.168.1.100 or worker.example.com" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">SSH Port</label>
+                <input class="form-input" id="wk-port" type="number" value="22" min="1" max="65535" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">SSH User *</label>
+                <input class="form-input" id="wk-user" type="text" value="root" placeholder="e.g. ubuntu" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Agent Type</label>
+                <select class="form-input" id="wk-agent-type">
+                    <option value="shell">🐚 Shell (bash)</option>
+                    <option value="docker">🐳 Docker</option>
+                </select>
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+                <label class="form-label">SSH Private Key (PEM)</label>
+                <textarea class="form-input" id="wk-ssh-key" rows="5" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----&#10;...&#10;-----END OPENSSH PRIVATE KEY-----" style="font-family:monospace;font-size:0.8rem;resize:vertical"></textarea>
+                <div style="font-size:0.75rem;color:#64748b;margin-top:0.3rem">Paste the private key for passwordless SSH access. Leave blank to skip SSH auth test.</div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Labels / Tags</label>
+                <input class="form-input" id="wk-labels" type="text" placeholder="e.g. linux,amd64,gpu" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Description</label>
+                <input class="form-input" id="wk-desc" type="text" placeholder="Optional description" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Agent Install Instructions -->
+        <details style="margin-bottom:1rem">
+            <summary style="cursor:pointer;font-size:0.83rem;color:#94a3b8;padding:0.4rem 0">📋 Agent Install Instructions (click to expand)</summary>
+            <div style="background:#0f172a;border-radius:6px;padding:0.9rem;margin-top:0.5rem;font-size:0.78rem;color:#94a3b8">
+                <div style="color:#e2e8f0;margin-bottom:0.5rem;font-size:0.8rem">Run this on the worker VM to set up the CI/CD agent:</div>
+                <pre id="wk-install-script" style="white-space:pre-wrap;word-break:break-all;color:#7dd3fc;font-family:monospace;font-size:0.75rem;margin:0">#!/bin/bash
+# Install Docker (skip if already installed)
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# Install build tools
+sudo apt-get update -y && sudo apt-get install -y git curl jq build-essential
+
+# Verify SSH access (run from management server)
+# ssh -i &lt;private_key&gt; &lt;user&gt;@&lt;host&gt; echo OK</pre>
+                <button class="btn btn-ghost btn-sm" style="margin-top:0.5rem;font-size:0.75rem" onclick="copyInstallScript()">📋 Copy Script</button>
+            </div>
+        </details>
+
+        <div class="form-error" id="worker-form-error"></div>
+        <div id="wk-test-result" style="display:none;padding:0.55rem 0.8rem;border-radius:6px;font-size:0.83rem;margin-bottom:0.5rem"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeWorkerModal()">Cancel</button>
+            <button class="btn btn-ghost" id="wk-test-btn" onclick="testWorkerSSHDirect()">🔌 Test SSH</button>
+            <button class="btn btn-primary" onclick="submitWorkerForm()">Add Worker</button>
+        </div>
+    </div>
+</div>
+
+<!-- WORKSPACE FORM MODAL -->
+<div class="modal-overlay" id="workspace-modal">
+    <div class="modal-box" style="max-width:440px">
+        <div class="modal-title" id="ws-modal-title">🗂️ New Workspace</div>
+        <div class="form-group">
+            <label class="form-label">Workspace Name *</label>
+            <input class="form-input" id="ws-name" type="text" placeholder="e.g. frontend-team" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Description</label>
+            <input class="form-input" id="ws-desc" type="text" placeholder="Optional description" autocomplete="off">
+        </div>
+        <div class="form-error" id="ws-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeWorkspaceModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitWorkspaceForm()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- ASSIGN USER MODAL -->
+<div class="modal-overlay" id="assign-user-modal">
+    <div class="modal-box" style="max-width:440px">
+        <div class="modal-title">👥 Assign User to Workspace</div>
+        <div style="font-size:0.8rem;color:#64748b;margin-bottom:0.8rem">Workspace: <strong id="assign-ws-name" style="color:#a5b4fc"></strong></div>
+        <div class="form-group">
+            <label class="form-label">Select User *</label>
+            <select class="form-input" id="assign-user-select">
+                <option value="">— loading users —</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Role in Workspace</label>
+            <select class="form-input" id="assign-user-role">
+                <option value="developer">👷 Developer</option>
+                <option value="viewer">👁️ Viewer</option>
+                <option value="lead">⭐ Lead</option>
+            </select>
+        </div>
+        <div class="form-error" id="assign-user-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeAssignUserModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitAssignUser()">Assign</button>
+        </div>
+    </div>
+</div>
+
+<!-- REGISTRY FORM MODAL -->
+<div class="modal-overlay" id="registry-modal">
+    <div class="modal-box" style="max-width:520px">
+        <div class="modal-title">🗄️ Add Container Registry</div>
+        <div class="form-group">
+            <label class="form-label">Registry Name *</label>
+            <input class="form-input" id="reg-name" type="text" placeholder="e.g. prod-harbor" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Registry Type *</label>
+            <select class="form-input" id="reg-type" onchange="onRegistryTypeChange()">
+                <option value="harbor">🏠 Harbor</option>
+                <option value="registryv2">🐳 Docker Registry v2</option>
+                <option value="gitlab">🦊 GitLab Registry</option>
+                <option value="aws">☁️ AWS ECR</option>
+                <option value="alibaba">🟠 Alibaba Container Registry</option>
+                <option value="huawei">🔵 Huawei SWR</option>
+            </select>
+        </div>
+
+        <!-- Harbor / Registry v2 / GitLab fields -->
+        <div id="reg-fields-url">
+            <div class="form-group">
+                <label class="form-label" id="reg-url-label">Registry URL *</label>
+                <input class="form-input" id="reg-url" type="text" placeholder="https://registry.example.com" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">TLS / SSL</label>
+                <div style="display:flex;gap:1.8rem;align-items:center;flex-wrap:wrap">
+                    <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;font-size:0.87rem">
+                        <input type="checkbox" id="reg-ssl" checked> Enable SSL (HTTPS)
+                    </label>
+                    <label style="display:flex;align-items:center;gap:0.45rem;cursor:pointer;font-size:0.87rem">
+                        <input type="checkbox" id="reg-skip-verify"> Skip TLS Verify <span style="font-size:0.75rem;color:#64748b">(self-signed cert)</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Harbor extra: project -->
+        <div id="reg-fields-harbor" style="display:none">
+            <div class="form-group">
+                <label class="form-label">Project / Namespace</label>
+                <input class="form-input" id="reg-harbor-project" type="text" placeholder="e.g. library" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- AWS ECR fields -->
+        <div id="reg-fields-aws" style="display:none">
+            <div class="form-group">
+                <label class="form-label">AWS Region *</label>
+                <input class="form-input" id="reg-aws-region" type="text" placeholder="e.g. ap-southeast-1" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Account ID *</label>
+                <input class="form-input" id="reg-aws-account" type="text" placeholder="123456789012" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Access Key ID *</label>
+                <input class="form-input" id="reg-aws-key" type="text" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Secret Access Key *</label>
+                <input class="form-input" id="reg-aws-secret" type="password" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Alibaba ACR fields -->
+        <div id="reg-fields-alibaba" style="display:none">
+            <div class="form-group">
+                <label class="form-label">Region *</label>
+                <input class="form-input" id="reg-ali-region" type="text" placeholder="e.g. cn-hangzhou" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Namespace *</label>
+                <input class="form-input" id="reg-ali-ns" type="text" placeholder="e.g. my-namespace" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Huawei SWR fields -->
+        <div id="reg-fields-huawei" style="display:none">
+            <div class="form-group">
+                <label class="form-label">Region *</label>
+                <input class="form-input" id="reg-hw-region" type="text" placeholder="e.g. cn-north-4" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Organization *</label>
+                <input class="form-input" id="reg-hw-org" type="text" placeholder="e.g. my-org" autocomplete="off">
+            </div>
+        </div>
+
+        <!-- Shared: Username + Password (shown for all except AWS) -->
+        <div id="reg-fields-auth">
+            <div class="form-group">
+                <label class="form-label" id="reg-user-label">Username *</label>
+                <input class="form-input" id="reg-username" type="text" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label" id="reg-pass-label">Password / Token *</label>
+                <input class="form-input" id="reg-password" type="password" autocomplete="off">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label">Description (optional)</label>
+            <input class="form-input" id="reg-desc" type="text" placeholder="What is this registry for?" autocomplete="off">
+        </div>
+        <div class="form-error" id="registry-form-error"></div>
+        <div id="reg-test-result" style="display:none;padding:0.55rem 0.8rem;border-radius:6px;font-size:0.83rem;margin-bottom:0.5rem"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeRegistryModal()">Cancel</button>
+            <button class="btn btn-ghost" onclick="testRegistryConnection()" id="reg-test-btn">🔌 Test Connection</button>
+            <button class="btn btn-primary" onclick="submitRegistryForm()">Add Registry</button>
+        </div>
+    </div>
+</div>
+
+<!-- PIPELINE FORM MODAL -->
+<div class="modal-overlay" id="pipeline-modal">
+    <div class="modal-box">
+        <div class="modal-title">⚙️ New Pipeline</div>
+        <div class="form-group">
+            <label class="form-label">Pipeline Name *</label>
+            <input class="form-input" id="pip-name" type="text" placeholder="e.g. frontend-ci" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Repository *</label>
+            <input class="form-input" id="pip-repo" type="text" placeholder="e.g. https://github.com/org/repo.git" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Branch</label>
+            <input class="form-input" id="pip-branch" type="text" value="main" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Build Command *</label>
+            <input class="form-input" id="pip-build-cmd" type="text" placeholder="e.g. docker build -t myapp:latest ." autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Deploy Command (optional)</label>
+            <input class="form-input" id="pip-deploy-cmd" type="text" placeholder="e.g. kubectl apply -f k8s/" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Trigger</label>
+            <select class="form-input" id="pip-trigger">
+                <option value="manual">Manual</option>
+                <option value="push">On Push</option>
+                <option value="pr">On Pull Request</option>
+                <option value="schedule">Schedule</option>
+            </select>
+        </div>
+
+        <div style="border-top:1px solid #1e293b;margin:0.8rem 0 1rem"></div>
+
+        <div class="form-group">
+            <label class="form-label">🖥️ Build Worker</label>
+            <select class="form-input" id="pip-worker">
+                <option value="">— Any available worker —</option>
+            </select>
+            <div style="font-size:0.73rem;color:#64748b;margin-top:0.25rem">Which VM worker should execute this pipeline's build steps.</div>
+        </div>
+
+        <div class="form-group">
+            <label class="form-label" style="display:flex;align-items:center;gap:0.7rem">
+                🗄️ Push to Registry
+                <label style="font-size:0.8rem;font-weight:normal;display:flex;align-items:center;gap:0.35rem;cursor:pointer">
+                    <input type="checkbox" id="pip-push-enabled" onchange="togglePipelinePushFields()"> Enable
+                </label>
+            </label>
+            <div id="pip-push-fields" style="display:none;margin-top:0.5rem">
+                <select class="form-input" id="pip-registry" style="margin-bottom:0.55rem">
+                    <option value="">— Select registry —</option>
+                </select>
+                <input class="form-input" id="pip-image-tag" type="text" placeholder="image name:tag  e.g. myapp:latest" autocomplete="off">
+                <div style="font-size:0.73rem;color:#64748b;margin-top:0.25rem">Image will be built and pushed to the selected registry after a successful build.</div>
+            </div>
+        </div>
+
+        <div class="form-error" id="pipeline-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closePipelineModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitPipelineForm()">Create Pipeline</button>
+        </div>
+    </div>
+</div>
+
+<!-- REPO FORM MODAL -->
+<div class="modal-overlay" id="repo-modal">
+    <div class="modal-box">
+        <div class="modal-title">🔗 Connect Repository</div>
+        <div class="form-group">
+            <label class="form-label">Repository Name *</label>
+            <input class="form-input" id="repo-name" type="text" placeholder="e.g. my-app" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">URL *</label>
+            <input class="form-input" id="repo-url" type="text" placeholder="https://github.com/org/repo.git" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Type</label>
+            <select class="form-input" id="repo-type">
+                <option value="github">GitHub</option>
+                <option value="gitlab">GitLab</option>
+                <option value="bitbucket">Bitbucket</option>
+                <option value="other">Other (Git)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Access Token (optional)</label>
+            <input class="form-input" id="repo-token" type="password" placeholder="Personal Access Token" autocomplete="off">
+        </div>
+        <div class="form-error" id="repo-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeRepoModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitRepoForm()">Connect</button>
+        </div>
+    </div>
+</div>
+
+<!-- SECRET FORM MODAL -->
+<div class="modal-overlay" id="secret-modal">
+    <div class="modal-box">
+        <div class="modal-title">🔒 Add Secret</div>
+        <div class="form-group">
+            <label class="form-label">Key *</label>
+            <input class="form-input" id="secret-key" type="text" placeholder="e.g. DOCKER_PASSWORD" autocomplete="off" style="text-transform:uppercase">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Value *</label>
+            <input class="form-input" id="secret-value" type="password" placeholder="secret value" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Description (optional)</label>
+            <input class="form-input" id="secret-desc" type="text" placeholder="What is this secret for?" autocomplete="off">
+        </div>
+        <div class="form-error" id="secret-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeSecretModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitSecretForm()">Save Secret</button>
+        </div>
+    </div>
+</div>
+
+<!-- RUN PIPELINE CONFIRMATION MODAL -->
+<div class="modal-overlay" id="run-modal">
+    <div class="modal-box" style="max-width:400px">
+        <div class="modal-title">▶ Run Pipeline</div>
+        <p style="font-size:0.85rem;color:#94a3b8;margin-bottom:1rem">Run pipeline: <strong id="run-pipeline-name" style="color:#e2e8f0"></strong></p>
+        <div class="form-group">
+            <label class="form-label">Branch override (optional)</label>
+            <input class="form-input" id="run-branch" type="text" placeholder="leave blank to use default branch" autocomplete="off">
+        </div>
+        <div class="form-error" id="run-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeRunModal()">Cancel</button>
+            <button class="btn btn-success" onclick="submitRun()">▶ Run Now</button>
+        </div>
+    </div>
+</div>
+
+<script>
+/* ── CICD Dashboard JS ──────────────────────────────────── */
+
+const API_BASE = '/api';
+let currentSection = 'overview';
+let currentRunPipelineId = null;
+let _editingWorkspaceId = null;
+
+// ── State ─────────────────────────────────────────────────
+const cicdState = {
+    workspaces:  JSON.parse(localStorage.getItem('cicd_workspaces')  || '[]'),
+    currentWsId: localStorage.getItem('cicd_current_ws') || null,
+    wsUsers:     JSON.parse(localStorage.getItem('cicd_ws_users')    || '{}'),
+    pipelines:   JSON.parse(localStorage.getItem('cicd_pipelines')   || '[]'),
+    repos:       JSON.parse(localStorage.getItem('cicd_repos')       || '[]'),
+    registries:  JSON.parse(localStorage.getItem('cicd_registries')  || '[]'),
+    secrets:     JSON.parse(localStorage.getItem('cicd_secrets')     || '[]'),
+    builds:      JSON.parse(localStorage.getItem('cicd_builds')      || '[]'),
+};
+
+// ── Auth ──────────────────────────────────────────────────
+const _origFetch = window.fetch.bind(window);
+window.fetch = (url, options = {}) => {
+    options.headers = options.headers || {};
+    const token = localStorage.getItem('authToken');
+    if (token) {
+        if (!(options.headers instanceof Headers)) {
+            options.headers['Authorization'] = `Bearer ${token}`;
+        } else {
+            options.headers.append('Authorization', `Bearer ${token}`);
+        }
+    }
+    return _origFetch(url, options).then(res => {
+        if (res.status === 401 && !url.includes('/auth/login')) {
+            localStorage.removeItem('authToken');
+            window.location.href = '/login.html';
+        }
+        return res;
+    });
+};
+
+// ── Init ──────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+    if (!localStorage.getItem('authToken')) {
+        window.location.href = '/login.html';
+        return;
+    }
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    document.getElementById('topbar-user').textContent = '\u{1F464} ' + (userData.username || 'user');
+
+    const roles = (userData.role || '').split(',').map(r => r.trim());
+    const isAdmin = roles.includes('admin');
+    const isViewOnly = roles.includes('user_cicd_view') && !isAdmin;
+
+    if (isViewOnly) {
+        document.querySelectorAll('.can-write').forEach(el => el.style.display = 'none');
+    }
+
+    // Workspace & Users sections are admin-only
+    if (!isAdmin) {
+        const wsMenu      = document.getElementById('menu-workspace');
+        const uMenu       = document.getElementById('menu-wsusers');
+        const wkMenu      = document.getElementById('menu-workers');
+        const divider     = wsMenu ? wsMenu.previousElementSibling : null;
+        if (wsMenu)  wsMenu.style.display  = 'none';
+        if (uMenu)   uMenu.style.display   = 'none';
+        if (wkMenu)  wkMenu.style.display  = 'none';
+        if (divider && divider.classList.contains('menu-divider')) divider.style.display = 'none';
+        const secWs      = document.getElementById('section-workspace');
+        const secUsers   = document.getElementById('section-wsusers');
+        const secWorkers = document.getElementById('section-workers');
+        if (secWs)      secWs.style.display      = 'none';
+        if (secUsers)   secUsers.style.display   = 'none';
+        if (secWorkers) secWorkers.style.display = 'none';
+    }
+
+    populateWorkspaceDropdown();
+    renderOverview();
+    renderPipelines();
+    renderBuilds();
+    renderRepos();
+    renderSecrets();
+    renderWorkspaces();
+});
+
+// ── Workspace Dropdown (topbar) ───────────────────────────
+function populateWorkspaceDropdown() {
+    const sel = document.getElementById('ws-select');
+    sel.innerHTML = '<option value="">\u2014 All \u2014</option>';
+    cicdState.workspaces.forEach(ws => {
+        const opt = document.createElement('option');
+        opt.value = ws.id;
+        opt.textContent = ws.name;
+        if (String(ws.id) === String(cicdState.currentWsId)) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+
+function switchWorkspace(wsId) {
+    cicdState.currentWsId = wsId || null;
+    localStorage.setItem('cicd_current_ws', cicdState.currentWsId || '');
+    // refresh current section
+    renderOverview();
+    renderPipelines();
+    renderBuilds();
+    renderRepos();
+    renderSecrets();
+    if (currentSection === 'wsusers') renderWorkspaceUsers();
+    if (currentSection === 'registry') renderRegistries();
+}
+
+// ── filtered helpers ──────────────────────────────────────
+function filteredByWs(arr) {
+    if (!cicdState.currentWsId) return arr;
+    return arr.filter(x => String(x.wsId) === String(cicdState.currentWsId));
+}
+
+// ── Section Navigation ────────────────────────────────────
+function showSection(name) {
+    ['overview','pipelines','builds','deployments','repos','registry','secrets','workspace','wsusers','workers'].forEach(s => {
+        const el = document.getElementById('section-' + s);
+        if (el) el.style.display = s === name ? '' : 'none';
+        const btn = document.getElementById('menu-' + s);
+        if (btn) btn.classList.toggle('active', s === name);
+    });
+    currentSection = name;
+    if (name === 'workspace')   renderWorkspaces();
+    if (name === 'wsusers')     renderWorkspaceUsers();
+    if (name === 'deployments') loadDeploymentHistory();
+    if (name === 'registry')    renderRegistries();
+    if (name === 'workers')     renderWorkers();
+}
+
+// ── Overview ──────────────────────────────────────────────
+function renderOverview() {
+    const builds = filteredByWs(cicdState.builds);
+    const today = new Date().toDateString();
+    const todayBuilds = builds.filter(b => new Date(b.startedAt).toDateString() === today);
+    document.getElementById('stat-pipelines').textContent = filteredByWs(cicdState.pipelines).length;
+    document.getElementById('stat-running').textContent   = builds.filter(b => b.status === 'running').length;
+    document.getElementById('stat-success').textContent  = todayBuilds.filter(b => b.status === 'success').length;
+    document.getElementById('stat-failed').textContent   = todayBuilds.filter(b => b.status === 'failed').length;
+
+    const recentEl = document.getElementById('recent-activity-body');
+    if (builds.length === 0) {
+        recentEl.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F680}</div><div>No recent activity. Create a pipeline to get started.</div></div>`;
+        return;
+    }
+    const sorted = [...builds].sort((a,b) => new Date(b.startedAt) - new Date(a.startedAt)).slice(0, 10);
+    recentEl.innerHTML = `<table>
+        <thead><tr><th>#</th><th>Pipeline</th><th>Branch</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
+        <tbody>${sorted.map(b => `
+            <tr>
+                <td style="color:#64748b;font-family:monospace">#${b.id}</td>
+                <td>${escapeHtml(b.pipelineName)}</td>
+                <td><code style="font-size:0.75rem;color:#818cf8">${escapeHtml(b.branch)}</code></td>
+                <td>${statusBadge(b.status)}</td>
+                <td style="color:#64748b">${timeAgo(b.startedAt)}</td>
+                <td style="color:#64748b">${b.duration || '\u2014'}</td>
+            </tr>`).join('')}
+        </tbody></table>`;
+}
+
+// ── Pipelines ─────────────────────────────────────────────
+function renderPipelines() {
+    const el = document.getElementById('pipelines-body');
+    const pipes = filteredByWs(cicdState.pipelines);
+    if (pipes.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u2699\uFE0F</div><div>No pipelines yet${cicdState.currentWsId ? ' in this workspace' : ''}.</div></div>`;
+        return;
+    }
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    el.innerHTML = `<table>
+        <thead><tr><th>Name</th><th>Repository</th><th>Branch</th><th>Worker</th><th>Push Target</th><th>Trigger</th><th>Last Build</th><th>Actions</th></tr></thead>
+        <tbody>${pipes.map(p => {
+            const ws = cicdState.workspaces.find(w => String(w.id) === String(p.wsId));
+            const lastBuild = [...cicdState.builds].filter(b => b.pipelineId === p.id).sort((a,b) => new Date(b.startedAt)-new Date(a.startedAt))[0];
+            const workerCell = p.workerName
+                ? `<span style="font-size:0.75rem;color:#7dd3fc">\ud83d\udda5\ufe0f ${escapeHtml(p.workerName)}</span>`
+                : `<span style="font-size:0.73rem;color:#475569">Any</span>`;
+            const pushCell = (p.registryName && p.imageTag)
+                ? `<div style="font-size:0.73rem;line-height:1.6">
+                       <span style="color:#a78bfa">\ud83d\uddc4\ufe0f ${escapeHtml(p.registryName)}</span><br>
+                       <code style="color:#34d399;font-size:0.7rem">${escapeHtml(p.imageTag)}</code>
+                   </div>`
+                : `<span style="font-size:0.73rem;color:#475569">\u2014</span>`;
+            return `<tr>
+                <td style="font-weight:600;color:#e2e8f0">${escapeHtml(p.name)}</td>
+                <td style="font-size:0.78rem;color:#94a3b8;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.repo)}">${escapeHtml(p.repo)}</td>
+                <td><code style="font-size:0.75rem;color:#818cf8">${escapeHtml(p.branch)}</code></td>
+                <td>${workerCell}</td>
+                <td>${pushCell}</td>
+                <td>${triggerBadge(p.trigger)}</td>
+                <td>${lastBuild ? statusBadge(lastBuild.status) + ' ' + timeAgo(lastBuild.startedAt) : '<span style="color:#64748b">Never</span>'}</td>
+                <td>
+                    <div style="display:flex;gap:0.3rem">
+                        <button class="btn btn-sm btn-success can-write" onclick="openRunModal(${p.id}, '${escapeHtml(p.name).replace(/'/g,"\\'")  }', '${escapeHtml(p.branch).replace(/'/g,"\\'")}')">&#9654; Run</button>
+                        <button class="btn btn-sm btn-danger can-write" onclick="deletePipeline(${p.id})">\u{1F5D1}\uFE0F</button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('')}
+        </tbody></table>`;
+    if (userData.role === 'user_cicd_view') el.querySelectorAll('.can-write').forEach(e => e.style.display='none');
+}
+
+// ── Builds ────────────────────────────────────────────────
+function renderBuilds() {
+    const el = document.getElementById('builds-body');
+    const builds = filteredByWs(cicdState.builds);
+    if (builds.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F4CB}</div><div>No builds yet.</div></div>`;
+        return;
+    }
+    const sorted = [...builds].sort((a,b) => new Date(b.startedAt)-new Date(a.startedAt));
+    el.innerHTML = `<table>
+        <thead><tr><th>#</th><th>Pipeline</th><th>Branch</th><th>Status</th><th>Steps</th><th>Started</th><th>Duration</th></tr></thead>
+        <tbody>${sorted.map(b => `<tr>
+            <td style="color:#64748b;font-family:monospace">#${b.id}</td>
+            <td>${escapeHtml(b.pipelineName)}</td>
+            <td><code style="font-size:0.75rem;color:#818cf8">${escapeHtml(b.branch)}</code></td>
+            <td>${statusBadge(b.status)}</td>
+            <td>${renderSteps(b.steps || [])}</td>
+            <td style="color:#64748b">${timeAgo(b.startedAt)}</td>
+            <td style="color:#64748b">${b.duration || '\u2014'}</td>
+        </tr>`).join('')}
+        </tbody></table>`;
+}
+
+// ── Deployment History ────────────────────────────────────
+function loadDeploymentHistory() {
+    const el = document.getElementById('deployments-body');
+    const deploys = filteredByWs(cicdState.builds).filter(b => b.status === 'success' && b.deployCmd);
+    if (deploys.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F4E6}</div><div>No deployment records found.</div></div>`;
+        return;
+    }
+    el.innerHTML = `<table>
+        <thead><tr><th>#</th><th>Pipeline</th><th>Branch</th><th>Deploy Cmd</th><th>Deployed At</th></tr></thead>
+        <tbody>${deploys.map(b => `<tr>
+            <td>#${b.id}</td>
+            <td>${escapeHtml(b.pipelineName)}</td>
+            <td><code>${escapeHtml(b.branch)}</code></td>
+            <td style="font-size:0.75rem;font-family:monospace;color:#94a3b8">${escapeHtml(b.deployCmd)}</td>
+            <td>${timeAgo(b.startedAt)}</td>
+        </tr>`).join('')}</tbody></table>`;
+}
+
+// ── Repos ─────────────────────────────────────────────────
+function renderRepos() {
+    const el = document.getElementById('repos-body');
+    const repos = filteredByWs(cicdState.repos);
+    if (repos.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F517}</div><div>No repositories connected.</div></div>`;
+        return;
+    }
+    const icons = { github: '\u{1F419}', gitlab: '\u{1F98A}', bitbucket: '\u{1FAA3}', other: '\u{1F4E6}' };
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    el.innerHTML = `<table>
+        <thead><tr><th>Name</th><th>URL</th><th>Type</th><th>Connected</th><th>Actions</th></tr></thead>
+        <tbody>${repos.map(r => `<tr>
+            <td style="font-weight:600;color:#e2e8f0">${escapeHtml(r.name)}</td>
+            <td style="font-size:0.78rem;color:#94a3b8">${escapeHtml(r.url)}</td>
+            <td>${icons[r.type]||'\u{1F4E6}'} ${r.type}</td>
+            <td style="color:#64748b">${timeAgo(r.connectedAt)}</td>
+            <td><button class="btn btn-sm btn-danger can-write" onclick="deleteRepo(${r.id})">\u{1F5D1}\uFE0F</button></td>
+        </tr>`).join('')}</tbody></table>`;
+    if (userData.role === 'user_cicd_view') el.querySelectorAll('.can-write').forEach(e => e.style.display='none');
+}
+
+// ── Secrets ───────────────────────────────────────────────
+function renderSecrets() {
+    const el = document.getElementById('secrets-body');
+    const secrets = filteredByWs(cicdState.secrets);
+    if (secrets.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F512}</div><div>No secrets defined. Secrets are injected into builds as environment variables.</div></div>`;
+        return;
+    }
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    el.innerHTML = `<table>
+        <thead><tr><th>Key</th><th>Description</th><th>Added</th><th>Actions</th></tr></thead>
+        <tbody>${secrets.map(s => `<tr>
+            <td style="font-family:monospace;color:#818cf8">${escapeHtml(s.key)}</td>
+            <td style="color:#94a3b8">${escapeHtml(s.desc || '\u2014')}</td>
+            <td style="color:#64748b">${timeAgo(s.addedAt)}</td>
+            <td><button class="btn btn-sm btn-danger can-write" onclick="deleteSecret(${s.id})">\u{1F5D1}\uFE0F</button></td>
+        </tr>`).join('')}</tbody></table>`;
+    if (userData.role === 'user_cicd_view') el.querySelectorAll('.can-write').forEach(e => e.style.display='none');
+}
+
+// ── Workspaces CRUD ───────────────────────────────────────
+function renderWorkspaces() {
+    const el = document.getElementById('workspace-body');
+    if (cicdState.workspaces.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F5C2}\uFE0F</div><div>No workspaces yet. Create one to scope your pipelines, repos and secrets.</div></div>`;
+        return;
+    }
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    el.innerHTML = `<table>
+        <thead><tr><th>Name</th><th>Description</th><th>Pipelines</th><th>Members</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody>${cicdState.workspaces.map(ws => {
+            const pipeCount = cicdState.pipelines.filter(p => String(p.wsId) === String(ws.id)).length;
+            const members   = (cicdState.wsUsers[ws.id] || []).length;
+            const isCurrent = String(ws.id) === String(cicdState.currentWsId);
+            return `<tr>
+                <td>
+                    <div style="display:flex;align-items:center;gap:0.5rem">
+                        ${isCurrent ? '<span style="color:#818cf8;font-size:0.7rem">\u25cf</span>' : '<span style="color:#334155;font-size:0.7rem">\u25cb</span>'}
+                        <span style="font-weight:600;color:#e2e8f0">${escapeHtml(ws.name)}</span>
+                        ${isCurrent ? '<span style="font-size:0.65rem;background:rgba(99,102,241,0.2);color:#818cf8;padding:0.1rem 0.45rem;border-radius:10px">active</span>' : ''}
+                    </div>
+                </td>
+                <td style="color:#94a3b8">${escapeHtml(ws.desc || '\u2014')}</td>
+                <td style="color:#94a3b8">${pipeCount}</td>
+                <td style="color:#94a3b8">${members}</td>
+                <td style="color:#64748b">${timeAgo(ws.createdAt)}</td>
+                <td>
+                    <div style="display:flex;gap:0.3rem">
+                        <button class="btn btn-sm btn-ghost" onclick="selectWorkspace(${ws.id})">${isCurrent ? '\u2713 Active' : '\u21c0 Use'}</button>
+                        <button class="btn btn-sm btn-ghost can-write" onclick="openEditWorkspaceModal(${ws.id})">\u270f\uFE0F</button>
+                        <button class="btn btn-sm btn-danger can-write" onclick="deleteWorkspace(${ws.id})">\u{1F5D1}\uFE0F</button>
+                    </div>
+                </td>
+            </tr>`;
+        }).join('')}
+        </tbody></table>`;
+    if (userData.role === 'user_cicd_view') el.querySelectorAll('.can-write').forEach(e => e.style.display='none');
+}
+
+function selectWorkspace(wsId) {
+    const sel = document.getElementById('ws-select');
+    sel.value = wsId;
+    switchWorkspace(wsId);
+    renderWorkspaces();
+}
+
+function openWorkspaceModal() {
+    _editingWorkspaceId = null;
+    document.getElementById('ws-modal-title').textContent = '\u{1F5C2}\uFE0F New Workspace';
+    document.getElementById('ws-name').value = '';
+    document.getElementById('ws-desc').value = '';
+    document.getElementById('ws-form-error').textContent = '';
+    document.getElementById('workspace-modal').classList.add('open');
+}
+
+function openEditWorkspaceModal(wsId) {
+    const ws = cicdState.workspaces.find(w => w.id === wsId);
+    if (!ws) return;
+    _editingWorkspaceId = wsId;
+    document.getElementById('ws-modal-title').textContent = '\u270f\uFE0F Edit Workspace';
+    document.getElementById('ws-name').value = ws.name;
+    document.getElementById('ws-desc').value = ws.desc || '';
+    document.getElementById('ws-form-error').textContent = '';
+    document.getElementById('workspace-modal').classList.add('open');
+}
+
+function closeWorkspaceModal() { document.getElementById('workspace-modal').classList.remove('open'); }
+
+function submitWorkspaceForm() {
+    const name  = document.getElementById('ws-name').value.trim();
+    const desc  = document.getElementById('ws-desc').value.trim();
+    const errEl = document.getElementById('ws-form-error');
+    if (!name) { errEl.textContent = 'Workspace name is required'; return; }
+
+    if (_editingWorkspaceId) {
+        const ws = cicdState.workspaces.find(w => w.id === _editingWorkspaceId);
+        if (ws) { ws.name = name; ws.desc = desc; }
+    } else {
+        const id = Date.now();
+        cicdState.workspaces.push({ id, name, desc, createdAt: new Date().toISOString() });
+        if (!cicdState.currentWsId) {
+            cicdState.currentWsId = id;
+            localStorage.setItem('cicd_current_ws', id);
+        }
+    }
+    saveState();
+    populateWorkspaceDropdown();
+    closeWorkspaceModal();
+    renderWorkspaces();
+}
+
+function deleteWorkspace(wsId) {
+    const ws = cicdState.workspaces.find(w => w.id === wsId);
+    if (!confirm(`Delete workspace "${ws ? ws.name : wsId}"? This does not delete associated pipelines.`)) return;
+    cicdState.workspaces = cicdState.workspaces.filter(w => w.id !== wsId);
+    delete cicdState.wsUsers[wsId];
+    if (String(cicdState.currentWsId) === String(wsId)) {
+        cicdState.currentWsId = cicdState.workspaces[0]?.id || null;
+        localStorage.setItem('cicd_current_ws', cicdState.currentWsId || '');
+    }
+    saveState();
+    populateWorkspaceDropdown();
+    renderWorkspaces();
+}
+
+// ── Workspace Users ───────────────────────────────────────
+function renderWorkspaceUsers() {
+    const el = document.getElementById('wsusers-body');
+    const labelEl = document.getElementById('wsusers-ws-label');
+    if (!cicdState.currentWsId) {
+        labelEl.textContent = '';
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F465}</div><div>Please select a workspace from the topbar first.</div></div>`;
+        return;
+    }
+    const ws = cicdState.workspaces.find(w => String(w.id) === String(cicdState.currentWsId));
+    labelEl.textContent = ws ? `— ${ws.name}` : '';
+    const members = cicdState.wsUsers[cicdState.currentWsId] || [];
+    if (members.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">\u{1F465}</div><div>No users assigned to this workspace yet.</div></div>`;
+        return;
+    }
+    const roleIcon = { developer: '\u{1F477}', viewer: '\u{1F441}\uFE0F', lead: '\u2B50' };
+    const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+    el.innerHTML = `<table>
+        <thead><tr><th>Username</th><th>Role in Workspace</th><th>Assigned</th><th>Actions</th></tr></thead>
+        <tbody>${members.map(m => `<tr>
+            <td style="font-weight:600;color:#e2e8f0">${escapeHtml(m.username)}</td>
+            <td>${roleIcon[m.wsRole] || ''} <span style="font-size:0.82rem;color:#a5b4fc">${escapeHtml(m.wsRole)}</span></td>
+            <td style="color:#64748b">${timeAgo(m.assignedAt)}</td>
+            <td><button class="btn btn-sm btn-danger can-write" onclick="removeUserFromWorkspace(${m.userId})">Remove</button></td>
+        </tr>`).join('')}</tbody></table>`;
+    if (userData.role === 'user_cicd_view') el.querySelectorAll('.can-write').forEach(e => e.style.display='none');
+}
+
+async function openAssignUserModal() {
+    if (!cicdState.currentWsId) {
+        alert('Please select a workspace first.');
+        return;
+    }
+    const ws = cicdState.workspaces.find(w => String(w.id) === String(cicdState.currentWsId));
+    document.getElementById('assign-ws-name').textContent = ws ? ws.name : cicdState.currentWsId;
+    document.getElementById('assign-user-error').textContent = '';
+
+    // Fetch system users
+    const sel = document.getElementById('assign-user-select');
+    sel.innerHTML = '<option value="">Loading...</option>';
+    try {
+        const res = await fetch(`${API_BASE}/users`);
+        const users = await res.json();
+        const existing = (cicdState.wsUsers[cicdState.currentWsId] || []).map(m => m.userId);
+        const available = users.filter(u => !existing.includes(u.id));
+        sel.innerHTML = available.length
+            ? available.map(u => `<option value="${u.id}" data-username="${escapeHtml(u.username)}">${escapeHtml(u.username)} (${u.role})</option>`).join('')
+            : '<option value="">— all users already assigned —</option>';
+    } catch(e) {
+        sel.innerHTML = '<option value="">Failed to load users</option>';
+    }
+    document.getElementById('assign-user-modal').classList.add('open');
+}
+function closeAssignUserModal() { document.getElementById('assign-user-modal').classList.remove('open'); }
+
+function submitAssignUser() {
+    const sel     = document.getElementById('assign-user-select');
+    const userId  = sel.value;
+    const username = sel.options[sel.selectedIndex]?.getAttribute('data-username') || sel.options[sel.selectedIndex]?.text || userId;
+    const wsRole  = document.getElementById('assign-user-role').value;
+    const errEl   = document.getElementById('assign-user-error');
+    if (!userId) { errEl.textContent = 'Please select a user'; return; }
+
+    if (!cicdState.wsUsers[cicdState.currentWsId]) cicdState.wsUsers[cicdState.currentWsId] = [];
+    const already = cicdState.wsUsers[cicdState.currentWsId].find(m => String(m.userId) === String(userId));
+    if (already) { errEl.textContent = 'User already assigned'; return; }
+
+    cicdState.wsUsers[cicdState.currentWsId].push({
+        userId: parseInt(userId),
+        username,
+        wsRole,
+        assignedAt: new Date().toISOString(),
+    });
+    saveState();
+    closeAssignUserModal();
+    renderWorkspaceUsers();
+    renderWorkspaces();
+}
+
+function removeUserFromWorkspace(userId) {
+    if (!confirm('Remove this user from the workspace?')) return;
+    if (cicdState.wsUsers[cicdState.currentWsId]) {
+        cicdState.wsUsers[cicdState.currentWsId] = cicdState.wsUsers[cicdState.currentWsId].filter(m => m.userId !== userId);
+    }
+    saveState();
+    renderWorkspaceUsers();
+    renderWorkspaces();
+}
+
+// ── Pipeline Modal ────────────────────────────────────────
+function openPipelineModal() {
+    if (!cicdState.currentWsId) {
+        alert('Please select or create a workspace first.');
+        showSection('workspace');
+        return;
+    }
+    ['pip-name','pip-repo','pip-build-cmd','pip-deploy-cmd','pip-image-tag'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('pip-branch').value = 'main';
+    document.getElementById('pip-trigger').value = 'manual';
+    document.getElementById('pip-push-enabled').checked = false;
+    document.getElementById('pip-push-fields').style.display = 'none';
+    document.getElementById('pipeline-form-error').textContent = '';
+
+    // Populate worker dropdown
+    const workerSel = document.getElementById('pip-worker');
+    workerSel.innerHTML = '<option value="">\u2014 Any available worker \u2014</option>';
+    fetch('/api/cicd/workers')
+        .then(r => r.json())
+        .then(list => {
+            (list || []).filter(wk => wk.status !== 'offline' || true).forEach(wk => {
+                const opt = document.createElement('option');
+                opt.value = wk.id;
+                const statusDot = wk.status === 'online' ? '🟢' : '⚪';
+                opt.textContent = `${statusDot} ${wk.name}  (${wk.host}) — ${wk.agent_type}`;
+                opt.dataset.name = wk.name;
+                workerSel.appendChild(opt);
+            });
+        })
+        .catch(() => {});
+
+    // Populate registry dropdown
+    const regSel = document.getElementById('pip-registry');
+    regSel.innerHTML = '<option value="">\u2014 Select registry \u2014</option>';
+    const wsParam = cicdState.currentWsId ? `?workspace_id=${encodeURIComponent(cicdState.currentWsId)}` : '';
+    fetch('/api/cicd/registries' + wsParam)
+        .then(r => r.json())
+        .then(list => {
+            (list || []).forEach(reg => {
+                const meta = _registryMeta[reg.type] || { icon: '🗄️', label: reg.type };
+                const opt = document.createElement('option');
+                opt.value = reg.id;
+                opt.textContent = `${meta.icon} ${reg.name}  (${reg.url || reg.type})`;
+                opt.dataset.name = reg.name;
+                opt.dataset.url  = reg.url || '';
+                regSel.appendChild(opt);
+            });
+        })
+        .catch(() => {});
+
+    document.getElementById('pipeline-modal').classList.add('open');
+}
+function togglePipelinePushFields() {
+    const enabled = document.getElementById('pip-push-enabled').checked;
+    document.getElementById('pip-push-fields').style.display = enabled ? '' : 'none';
+}
+function closePipelineModal() { document.getElementById('pipeline-modal').classList.remove('open'); }
+
+function submitPipelineForm() {
+    const name      = document.getElementById('pip-name').value.trim();
+    const repo      = document.getElementById('pip-repo').value.trim();
+    const branch    = document.getElementById('pip-branch').value.trim() || 'main';
+    const buildCmd  = document.getElementById('pip-build-cmd').value.trim();
+    const deployCmd = document.getElementById('pip-deploy-cmd').value.trim();
+    const trigger   = document.getElementById('pip-trigger').value;
+    const errEl     = document.getElementById('pipeline-form-error');
+
+    if (!name)     { errEl.textContent = 'Pipeline name is required'; return; }
+    if (!repo)     { errEl.textContent = 'Repository URL is required'; return; }
+    if (!buildCmd) { errEl.textContent = 'Build command is required'; return; }
+
+    // Worker
+    const workerSel  = document.getElementById('pip-worker');
+    const workerId   = workerSel.value || null;
+    const workerName = workerId ? (workerSel.options[workerSel.selectedIndex].dataset.name || workerSel.options[workerSel.selectedIndex].text) : null;
+
+    // Registry push
+    const pushEnabled  = document.getElementById('pip-push-enabled').checked;
+    const regSel       = document.getElementById('pip-registry');
+    const registryId   = pushEnabled && regSel.value ? regSel.value : null;
+    const registryName = registryId ? (regSel.options[regSel.selectedIndex].dataset.name || '') : null;
+    const registryUrl  = registryId ? (regSel.options[regSel.selectedIndex].dataset.url  || '') : null;
+    const imageTag     = pushEnabled ? document.getElementById('pip-image-tag').value.trim() : null;
+
+    if (pushEnabled && !registryId) { errEl.textContent = 'Select a registry or uncheck "Push to Registry"'; return; }
+    if (pushEnabled && !imageTag)   { errEl.textContent = 'Enter an image name:tag to push (e.g. myapp:latest)'; return; }
+
+    const id = Date.now();
+    cicdState.pipelines.push({
+        id, name, repo, branch, buildCmd, deployCmd, trigger,
+        wsId: cicdState.currentWsId, createdAt: new Date().toISOString(),
+        workerId, workerName,
+        registryId, registryName, registryUrl, imageTag,
+    });
+    saveState();
+    closePipelineModal();
+    renderPipelines();
+    renderOverview();
+}
+
+// ── Run Modal ─────────────────────────────────────────────
+function openRunModal(pipelineId, name, branch) {
+    currentRunPipelineId = pipelineId;
+    document.getElementById('run-pipeline-name').textContent = name;
+    document.getElementById('run-branch').value = '';
+    document.getElementById('run-form-error').textContent = '';
+    document.getElementById('run-modal').classList.add('open');
+}
+function closeRunModal() { document.getElementById('run-modal').classList.remove('open'); }
+
+function submitRun() {
+    const pipeline = cicdState.pipelines.find(p => p.id === currentRunPipelineId);
+    if (!pipeline) return;
+    const branch = document.getElementById('run-branch').value.trim() || pipeline.branch;
+
+    const buildId = cicdState.builds.length > 0 ? Math.max(...cicdState.builds.map(b => b.id)) + 1 : 1;
+    const build = {
+        id: buildId,
+        pipelineId: pipeline.id,
+        pipelineName: pipeline.name,
+        wsId: pipeline.wsId,
+        branch,
+        deployCmd: pipeline.deployCmd,
+        status: 'running',
+        steps: [
+            { name: 'Checkout', status: 'success' },
+            { name: 'Build', status: 'running' },
+            { name: 'Deploy', status: 'pending' },
+        ],
+        startedAt: new Date().toISOString(),
+        duration: null,
+    };
+    cicdState.builds.push(build);
+    saveState();
+    closeRunModal();
+    renderBuilds();
+    renderOverview();
+
+    setTimeout(() => {
+        const b = cicdState.builds.find(x => x.id === buildId);
+        if (b) {
+            b.status = 'success';
+            b.duration = '3s';
+            b.steps = [
+                { name: 'Checkout', status: 'success' },
+                { name: 'Build',    status: 'success' },
+                { name: 'Deploy',   status: pipeline.deployCmd ? 'success' : 'pending' },
+            ];
+            saveState();
+            renderBuilds();
+            renderOverview();
+        }
+    }, 3000);
+}
+
+// ── Repo Modal ────────────────────────────────────────────
+function openRepoModal() {
+    if (!cicdState.currentWsId) { alert('Please select or create a workspace first.'); showSection('workspace'); return; }
+    ['repo-name','repo-url','repo-token'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('repo-form-error').textContent = '';
+    document.getElementById('repo-modal').classList.add('open');
+}
+function closeRepoModal() { document.getElementById('repo-modal').classList.remove('open'); }
+
+function submitRepoForm() {
+    const name  = document.getElementById('repo-name').value.trim();
+    const url   = document.getElementById('repo-url').value.trim();
+    const type  = document.getElementById('repo-type').value;
+    const token = document.getElementById('repo-token').value.trim();
+    const errEl = document.getElementById('repo-form-error');
+    if (!name) { errEl.textContent = 'Repository name is required'; return; }
+    if (!url)  { errEl.textContent = 'Repository URL is required'; return; }
+
+    cicdState.repos.push({ id: Date.now(), name, url, type, token: token ? '***' : '', wsId: cicdState.currentWsId, connectedAt: new Date().toISOString() });
+    saveState();
+    closeRepoModal();
+    renderRepos();
+}
+
+// ── Secret Modal ──────────────────────────────────────────
+function openSecretModal() {
+    if (!cicdState.currentWsId) { alert('Please select or create a workspace first.'); showSection('workspace'); return; }
+    ['secret-key','secret-value','secret-desc'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('secret-form-error').textContent = '';
+    document.getElementById('secret-modal').classList.add('open');
+}
+function closeSecretModal() { document.getElementById('secret-modal').classList.remove('open'); }
+
+function submitSecretForm() {
+    const key   = document.getElementById('secret-key').value.trim().toUpperCase();
+    const value = document.getElementById('secret-value').value.trim();
+    const desc  = document.getElementById('secret-desc').value.trim();
+    const errEl = document.getElementById('secret-form-error');
+    if (!key)   { errEl.textContent = 'Key is required'; return; }
+    if (!value) { errEl.textContent = 'Value is required'; return; }
+
+    cicdState.secrets.push({ id: Date.now(), key, desc, wsId: cicdState.currentWsId, addedAt: new Date().toISOString() });
+    saveState();
+    closeSecretModal();
+    renderSecrets();
+}
+
+// ── Delete Helpers ────────────────────────────────────────
+function deletePipeline(id) {
+    if (!confirm('Delete this pipeline?')) return;
+    cicdState.pipelines = cicdState.pipelines.filter(p => p.id !== id);
+    saveState(); renderPipelines(); renderOverview();
+}
+function deleteRepo(id) {
+    if (!confirm('Remove this repository?')) return;
+    cicdState.repos = cicdState.repos.filter(r => r.id !== id);
+    saveState(); renderRepos();
+}
+function deleteSecret(id) {
+    if (!confirm('Delete this secret?')) return;
+    cicdState.secrets = cicdState.secrets.filter(s => s.id !== id);
+    saveState(); renderSecrets();
+}
+function loadBuilds() { renderBuilds(); renderOverview(); }
+
+// ── Persist ───────────────────────────────────────────────
+function saveState() {
+    localStorage.setItem('cicd_workspaces',  JSON.stringify(cicdState.workspaces));
+    localStorage.setItem('cicd_ws_users',    JSON.stringify(cicdState.wsUsers));
+    localStorage.setItem('cicd_pipelines',   JSON.stringify(cicdState.pipelines));
+    localStorage.setItem('cicd_repos',       JSON.stringify(cicdState.repos));
+    localStorage.setItem('cicd_registries',  JSON.stringify(cicdState.registries));
+    localStorage.setItem('cicd_secrets',     JSON.stringify(cicdState.secrets));
+    localStorage.setItem('cicd_builds',      JSON.stringify(cicdState.builds));
+}
+
+// ── Registry ──────────────────────────────────────────────
+const _registryMeta = {
+    harbor:     { icon: '🏠', label: 'Harbor' },
+    registryv2: { icon: '🐳', label: 'Docker Registry v2' },
+    gitlab:     { icon: '🦊', label: 'GitLab Registry' },
+    aws:        { icon: '☁️',  label: 'AWS ECR' },
+    alibaba:    { icon: '🟠', label: 'Alibaba ACR' },
+    huawei:     { icon: '🔵', label: 'Huawei SWR' },
+};
+
+function renderRegistries() {
+    const el = document.getElementById('registry-body');
+    const wsId = cicdState.currentWsId || '';
+    const url  = '/api/cicd/registries' + (wsId ? `?workspace_id=${encodeURIComponent(wsId)}` : '');
+    fetch(url, { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+        .then(r => r.json())
+        .then(regs => {
+            if (!regs || regs.length === 0) {
+                el.innerHTML = `<div class="empty-state"><div class="empty-icon">🗄️</div><div>No registries added. Connect a registry to push/pull images in your pipelines.</div></div>`;
+                return;
+            }
+            const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+            el.innerHTML = `<table>
+                <thead><tr><th>Name</th><th>Type</th><th>Endpoint / Region</th><th>Username</th><th>SSL</th><th>Description</th><th>Added</th><th>Actions</th></tr></thead>
+                <tbody>${regs.map(r => {
+                    const meta = _registryMeta[r.type] || { icon: '🗄️', label: r.type };
+                    const extra = _parseExtraConfig(r.extra_config);
+                    const endpoint = r.url || (extra.aws_region ? `${extra.aws_region} / ${extra.aws_account}` : '') || '—';
+                    const sslBadge = r.ssl_enabled
+                        ? `<span style="font-size:0.75rem;color:#10b981">🔒 HTTPS${r.insecure_skip_verify ? ' (skip verify)' : ''}</span>`
+                        : `<span style="font-size:0.75rem;color:#f59e0b">🔓 HTTP</span>`;
+                    return `<tr>
+                        <td style="font-weight:600;color:#e2e8f0">${escapeHtml(r.name)}</td>
+                        <td><span style="font-size:0.8rem">${meta.icon} ${meta.label}</span></td>
+                        <td style="font-size:0.78rem;color:#94a3b8;font-family:monospace">${escapeHtml(endpoint)}</td>
+                        <td style="font-size:0.78rem;color:#94a3b8">${escapeHtml(r.username || '—')}</td>
+                        <td>${sslBadge}</td>
+                        <td style="font-size:0.78rem;color:#64748b">${escapeHtml(r.description || '—')}</td>
+                        <td style="color:#64748b">${timeAgo(r.created_at)}</td>
+                        <td><button class="btn btn-sm btn-danger can-write" onclick="deleteRegistry(${r.id})">🗑️</button></td>
+                    </tr>`;
+                }).join('')}</tbody></table>`;
+            const roles = (userData.role || '').split(',').map(s => s.trim());
+            if (roles.includes('user_cicd_view') && !roles.includes('admin')) {
+                el.querySelectorAll('.can-write').forEach(e => e.style.display = 'none');
+            }
+        })
+        .catch(() => {
+            el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Failed to load registries.</div></div>`;
+        });
+}
+
+function _parseExtraConfig(json) {
+    try { return json ? JSON.parse(json) : {}; } catch { return {}; }
+}
+
+function onRegistryTypeChange() {
+    const type = document.getElementById('reg-type').value;
+    // Show/hide field groups
+    document.getElementById('reg-fields-url').style.display     = (type === 'aws') ? 'none' : '';
+    document.getElementById('reg-fields-harbor').style.display  = (type === 'harbor') ? '' : 'none';
+    document.getElementById('reg-fields-aws').style.display     = (type === 'aws') ? '' : 'none';
+    document.getElementById('reg-fields-alibaba').style.display = (type === 'alibaba') ? '' : 'none';
+    document.getElementById('reg-fields-huawei').style.display  = (type === 'huawei') ? '' : 'none';
+    document.getElementById('reg-fields-auth').style.display    = (type === 'aws') ? 'none' : '';
+
+    // Adjust URL label
+    const urlLabels = {
+        harbor:     'Harbor URL *',
+        registryv2: 'Registry URL *',
+        gitlab:     'GitLab Registry URL *',
+        alibaba:    'ACR Registry URL *',
+        huawei:     'SWR Push URL *',
+    };
+    const el = document.getElementById('reg-url-label');
+    if (el) el.textContent = urlLabels[type] || 'Registry URL *';
+
+    // Adjust placeholder
+    const urlPlaceholders = {
+        harbor:     'https://harbor.example.com',
+        registryv2: 'https://registry.example.com',
+        gitlab:     'registry.gitlab.com',
+        alibaba:    'registry.cn-hangzhou.aliyuncs.com',
+        huawei:     'swr.cn-north-4.myhuaweicloud.com',
+    };
+    const urlInput = document.getElementById('reg-url');
+    if (urlInput) urlInput.placeholder = urlPlaceholders[type] || 'https://registry.example.com';
+
+    // Adjust user/pass labels
+    const userLabels  = { gitlab: 'Username (deploy token or user)', huawei: 'Access Key (AK)', alibaba: 'Account / AccessKey ID' };
+    const passLabels  = { gitlab: 'Password / Deploy Token', huawei: 'Secret Key (SK)', alibaba: 'Password / AccessKey Secret' };
+    const ul = document.getElementById('reg-user-label');
+    const pl = document.getElementById('reg-pass-label');
+    if (ul) ul.textContent = userLabels[type] || 'Username *';
+    if (pl) pl.textContent = passLabels[type] || 'Password / Token *';
+}
+
+function openRegistryModal() {
+    ['reg-name','reg-url','reg-harbor-project','reg-aws-region','reg-aws-account','reg-aws-key','reg-aws-secret',
+     'reg-ali-region','reg-ali-ns','reg-hw-region','reg-hw-org','reg-username','reg-password','reg-desc'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('reg-type').value = 'harbor';
+    document.getElementById('reg-ssl').checked = true;
+    document.getElementById('reg-skip-verify').checked = false;
+    document.getElementById('registry-form-error').textContent = '';
+    const tr = document.getElementById('reg-test-result');
+    if (tr) { tr.style.display = 'none'; tr.textContent = ''; }
+    onRegistryTypeChange();
+    document.getElementById('registry-modal').classList.add('open');
+}
+function closeRegistryModal() { document.getElementById('registry-modal').classList.remove('open'); }
+
+function submitRegistryForm() {
+    const name  = document.getElementById('reg-name').value.trim();
+    const type  = document.getElementById('reg-type').value;
+    const errEl = document.getElementById('registry-form-error');
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Registry name is required'; return; }
+
+    const payload = {
+        name,
+        type,
+        description:          document.getElementById('reg-desc').value.trim(),
+        workspace_id:         cicdState.currentWsId || '',
+        ssl_enabled:          document.getElementById('reg-ssl') ? document.getElementById('reg-ssl').checked : true,
+        insecure_skip_verify: document.getElementById('reg-skip-verify') ? document.getElementById('reg-skip-verify').checked : false,
+    };
+
+    if (type === 'aws') {
+        const region  = document.getElementById('reg-aws-region').value.trim();
+        const account = document.getElementById('reg-aws-account').value.trim();
+        const key     = document.getElementById('reg-aws-key').value.trim();
+        const secret  = document.getElementById('reg-aws-secret').value.trim();
+        if (!region || !account || !key || !secret) { errEl.textContent = 'All AWS fields are required'; return; }
+        payload.url        = `${account}.dkr.ecr.${region}.amazonaws.com`;
+        payload.username   = key;
+        payload.password   = secret;
+        payload.extra_config = JSON.stringify({ aws_region: region, aws_account: account });
+    } else {
+        const url      = document.getElementById('reg-url').value.trim();
+        const username = document.getElementById('reg-username').value.trim();
+        if (!url)      { errEl.textContent = 'Registry URL is required'; return; }
+        if (!username) { errEl.textContent = 'Username is required'; return; }
+        payload.url      = url;
+        payload.username = username;
+        payload.password = document.getElementById('reg-password').value;
+
+        const extra = {};
+        if (type === 'harbor')  extra.harbor_project = document.getElementById('reg-harbor-project').value.trim();
+        if (type === 'alibaba') { extra.ali_region = document.getElementById('reg-ali-region').value.trim(); extra.ali_ns = document.getElementById('reg-ali-ns').value.trim(); }
+        if (type === 'huawei')  { extra.hw_region  = document.getElementById('reg-hw-region').value.trim();  extra.hw_org = document.getElementById('reg-hw-org').value.trim(); }
+        if (Object.keys(extra).length > 0) payload.extra_config = JSON.stringify(extra);
+    }
+
+    fetch('/api/cicd/registries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('token') },
+        body: JSON.stringify(payload),
+    })
+    .then(async r => {
+        if (!r.ok) { const msg = await r.text(); throw new Error(msg || r.statusText); }
+        return r.json();
+    })
+    .then(() => {
+        closeRegistryModal();
+        renderRegistries();
+    })
+    .catch(e => { errEl.textContent = 'Error: ' + e.message; });
+}
+
+function deleteRegistry(id) {
+    if (!confirm('Remove this registry?')) return;
+    fetch('/api/cicd/registries/' + id, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
+    })
+    .then(r => r.json())
+    .then(() => renderRegistries())
+    .catch(e => alert('Delete failed: ' + e.message));
+}
+
+function testRegistryConnection() {
+    const type = document.getElementById('reg-type').value;
+    const errEl = document.getElementById('registry-form-error');
+    const resultEl = document.getElementById('reg-test-result');
+    errEl.textContent = '';
+    resultEl.style.display = 'none';
+
+    const payload = {
+        type,
+        ssl_enabled:          document.getElementById('reg-ssl') ? document.getElementById('reg-ssl').checked : true,
+        insecure_skip_verify: document.getElementById('reg-skip-verify') ? document.getElementById('reg-skip-verify').checked : false,
+    };
+
+    if (type === 'aws') {
+        const region  = document.getElementById('reg-aws-region').value.trim();
+        const account = document.getElementById('reg-aws-account').value.trim();
+        payload.extra_config = JSON.stringify({ aws_region: region, aws_account: account });
+    } else {
+        payload.url      = document.getElementById('reg-url').value.trim();
+        payload.username = document.getElementById('reg-username').value.trim();
+        payload.password = document.getElementById('reg-password').value;
+        if (!payload.url) { errEl.textContent = 'Enter a Registry URL first'; return; }
+    }
+
+    const btn = document.getElementById('reg-test-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Testing...'; }
+
+    fetch('/api/cicd/registries/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('token') },
+        body: JSON.stringify(payload),
+    })
+    .then(r => r.json())
+    .then(res => {
+        resultEl.style.display = '';
+        if (res.success) {
+            resultEl.style.background = 'rgba(16,185,129,0.12)';
+            resultEl.style.color      = '#10b981';
+            resultEl.style.border     = '1px solid rgba(16,185,129,0.3)';
+            resultEl.textContent      = '✅ ' + (res.message || 'Connection successful');
+        } else {
+            resultEl.style.background = 'rgba(239,68,68,0.1)';
+            resultEl.style.color      = '#ef4444';
+            resultEl.style.border     = '1px solid rgba(239,68,68,0.3)';
+            resultEl.textContent      = '❌ ' + (res.message || 'Connection failed');
+        }
+    })
+    .catch(e => {
+        resultEl.style.display = '';
+        resultEl.style.background = 'rgba(239,68,68,0.1)';
+        resultEl.style.color      = '#ef4444';
+        resultEl.style.border     = '1px solid rgba(239,68,68,0.3)';
+        resultEl.textContent      = '❌ Request failed: ' + e.message;
+    })
+    .finally(() => {
+        if (btn) { btn.disabled = false; btn.textContent = '🔌 Test Connection'; }
+    });
+}
+
+// ── Workers ─────────────────────────────────────────────────────────────────
+
+function renderWorkers() {
+    const el = document.getElementById('workers-body');
+    fetch('/api/cicd/workers', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+        .then(r => r.json())
+        .then(workers => {
+            if (!workers || workers.length === 0) {
+                el.innerHTML = `<div class="empty-state"><div class="empty-icon">🖥️</div><div>No workers configured. Add a VM worker to run pipeline builds via SSH.</div></div>`;
+                return;
+            }
+            el.innerHTML = `<table>
+                <thead><tr><th>Name</th><th>Host</th><th>SSH</th><th>Agent</th><th>Labels</th><th>Status</th><th>Added</th><th>Actions</th></tr></thead>
+                <tbody>${workers.map(wk => {
+                    const statusBadgeHtml = wk.status === 'online'
+                        ? `<span style="font-size:0.75rem;color:#10b981">● Online</span>`
+                        : wk.status === 'error'
+                        ? `<span style="font-size:0.75rem;color:#ef4444">● Error</span>`
+                        : `<span style="font-size:0.75rem;color:#64748b">● Offline</span>`;
+                    const agentIcon = wk.agent_type === 'docker' ? '🐳 Docker' : '🐚 Shell';
+                    return `<tr>
+                        <td style="font-weight:600;color:#e2e8f0">${escapeHtml(wk.name)}</td>
+                        <td style="font-family:monospace;font-size:0.78rem;color:#94a3b8">${escapeHtml(wk.host)}</td>
+                        <td style="font-size:0.78rem;color:#64748b">${escapeHtml(wk.ssh_user)}@port ${wk.ssh_port}</td>
+                        <td style="font-size:0.8rem">${agentIcon}</td>
+                        <td style="font-size:0.75rem;color:#64748b">${escapeHtml(wk.labels || '—')}</td>
+                        <td>${statusBadgeHtml}</td>
+                        <td style="color:#64748b">${timeAgo(wk.created_at)}</td>
+                        <td style="display:flex;gap:0.4rem;flex-wrap:wrap">
+                            <button class="btn btn-sm btn-ghost" onclick="testWorkerSSH(${wk.id})" title="Test SSH">🔌</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteWorker(${wk.id})">🗑️</button>
+                        </td>
+                    </tr>`;
+                }).join('')}</tbody></table>`;
+        })
+        .catch(() => {
+            el.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div>Failed to load workers.</div></div>`;
+        });
+}
+
+function openWorkerModal() {
+    ['wk-name','wk-host','wk-user','wk-labels','wk-desc','wk-ssh-key'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = id === 'wk-user' ? 'root' : '';
+    });
+    document.getElementById('wk-port').value = '22';
+    document.getElementById('wk-agent-type').value = 'shell';
+    document.getElementById('worker-form-error').textContent = '';
+    const tr = document.getElementById('wk-test-result');
+    if (tr) { tr.style.display = 'none'; tr.textContent = ''; }
+    document.getElementById('worker-modal').classList.add('open');
+}
+
+function closeWorkerModal() { document.getElementById('worker-modal').classList.remove('open'); }
+
+function submitWorkerForm() {
+    const name    = document.getElementById('wk-name').value.trim();
+    const host    = document.getElementById('wk-host').value.trim();
+    const errEl   = document.getElementById('worker-form-error');
+    errEl.textContent = '';
+    if (!name) { errEl.textContent = 'Worker name is required'; return; }
+    if (!host) { errEl.textContent = 'Host / IP is required'; return; }
+
+    const payload = {
+        name,
+        host,
+        ssh_port:        parseInt(document.getElementById('wk-port').value) || 22,
+        ssh_user:        document.getElementById('wk-user').value.trim() || 'root',
+        ssh_private_key: document.getElementById('wk-ssh-key').value,
+        agent_type:      document.getElementById('wk-agent-type').value,
+        labels:          document.getElementById('wk-labels').value.trim(),
+        description:     document.getElementById('wk-desc').value.trim(),
+        workspace_id:    cicdState.currentWsId || '',
+    };
+
+    fetch('/api/cicd/workers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('token') },
+        body: JSON.stringify(payload),
+    })
+    .then(async r => {
+        if (!r.ok) { const msg = await r.text(); throw new Error(msg || r.statusText); }
+        return r.json();
+    })
+    .then(() => {
+        closeWorkerModal();
+        renderWorkers();
+    })
+    .catch(e => { errEl.textContent = 'Error: ' + e.message; });
+}
+
+function deleteWorker(id) {
+    if (!confirm('Remove this worker?')) return;
+    fetch('/api/cicd/workers/' + id, {
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
+    })
+    .then(r => r.json())
+    .then(() => renderWorkers())
+    .catch(e => alert('Delete failed: ' + e.message));
+}
+
+// Test SSH for a saved worker (by id)
+function testWorkerSSH(id) {
+    fetch('/api/cicd/workers/' + id + '/test', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + localStorage.getItem('token') },
+    })
+    .then(r => r.json())
+    .then(res => {
+        const icon = res.success ? '✅' : '❌';
+        alert(icon + ' ' + (res.message || (res.success ? 'Reachable' : 'Unreachable')));
+        renderWorkers(); // refresh status badge
+    })
+    .catch(e => alert('Test failed: ' + e.message));
+}
+
+// Test SSH from inside the modal (before saving)
+function testWorkerSSHDirect() {
+    const host  = document.getElementById('wk-host').value.trim();
+    const port  = parseInt(document.getElementById('wk-port').value) || 22;
+    const errEl = document.getElementById('worker-form-error');
+    const resultEl = document.getElementById('wk-test-result');
+    errEl.textContent = '';
+    resultEl.style.display = 'none';
+    if (!host) { errEl.textContent = 'Enter Host / IP first'; return; }
+
+    const btn = document.getElementById('wk-test-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Testing...'; }
+
+    fetch('/api/cicd/workers/test-ssh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + localStorage.getItem('token') },
+        body: JSON.stringify({ host, ssh_port: port }),
+    })
+    .then(r => r.json())
+    .then(res => {
+        resultEl.style.display = '';
+        if (res.success) {
+            resultEl.style.cssText = 'display:block;padding:.55rem .8rem;border-radius:6px;font-size:.83rem;margin-bottom:.5rem;background:rgba(16,185,129,.12);color:#10b981;border:1px solid rgba(16,185,129,.3)';
+            resultEl.textContent = '✅ ' + (res.message || 'Reachable');
+        } else {
+            resultEl.style.cssText = 'display:block;padding:.55rem .8rem;border-radius:6px;font-size:.83rem;margin-bottom:.5rem;background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.3)';
+            resultEl.textContent = '❌ ' + (res.message || 'Unreachable');
+        }
+    })
+    .catch(e => {
+        resultEl.style.cssText = 'display:block;padding:.55rem .8rem;border-radius:6px;font-size:.83rem;margin-bottom:.5rem;background:rgba(239,68,68,.1);color:#ef4444;border:1px solid rgba(239,68,68,.3)';
+        resultEl.textContent = '❌ ' + e.message;
+    })
+    .finally(() => {
+        if (btn) { btn.disabled = false; btn.textContent = '🔌 Test SSH'; }
+    });
+}
+
+function copyInstallScript() {
+    const pre = document.getElementById('wk-install-script');
+    if (!pre) return;
+    navigator.clipboard.writeText(pre.textContent)
+        .then(() => alert('Install script copied to clipboard!'))
+        .catch(() => alert('Copy failed — please select and copy manually.'));
+}
+
+// ── Helpers ───────────────────────────────────────────────
+function escapeHtml(text) {
+    if (typeof text !== 'string') return String(text || '');
+    const d = document.createElement('div');
+    d.textContent = text;
+    return d.innerHTML;
+}
+
+function statusBadge(status) {
+    const map = {
+        success: '<span class="badge badge-success">\u2714 Success</span>',
+        running: '<span class="badge badge-running">\u27F3 Running</span>',
+        failed:  '<span class="badge badge-failed">\u2717 Failed</span>',
+        pending: '<span class="badge badge-pending">\u23F3 Pending</span>',
+        stopped: '<span class="badge badge-stopped">\u25A0 Stopped</span>',
+    };
+    return map[status] || `<span class="badge badge-stopped">${status}</span>`;
+}
+
+function triggerBadge(trigger) {
+    const map = { manual: '\u{1F5B1}\uFE0F Manual', push: '\u2B06\uFE0F Push', pr: '\u{1F500} PR', schedule: '\u23F0 Schedule' };
+    return `<span style="font-size:0.78rem;color:#94a3b8">${map[trigger] || trigger}</span>`;
+}
+
+function renderSteps(steps) {
+    if (!steps || steps.length === 0) return '\u2014';
+    return '<div class="pipeline-steps">' + steps.map((s, i) => {
+        const cls = { success: 'step-success', running: 'step-running', failed: 'step-failed', pending: 'step-pending' }[s.status] || 'step-pending';
+        return (i > 0 ? '<span class="step-arrow">\u203A</span>' : '') + `<span class="pipeline-step ${cls}">${s.name}</span>`;
+    }).join('') + '</div>';
+}
+
+function timeAgo(iso) {
+    if (!iso) return '\u2014';
+    const diff = (Date.now() - new Date(iso)) / 1000;
+    if (diff < 60)    return Math.round(diff) + 's ago';
+    if (diff < 3600)  return Math.round(diff/60) + 'm ago';
+    if (diff < 86400) return Math.round(diff/3600) + 'h ago';
+    return Math.round(diff/86400) + 'd ago';
+}
+</script>
+</body>
+</html>

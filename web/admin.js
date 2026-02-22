@@ -30,8 +30,16 @@ async function loadUsers() {
             'user_docker': '🐳 Docker Full',
             'user_docker_basic': '🐳 Docker Basic',
             'user_k8s_full': '☸️ K8s Full',
-            'user_k8s_view': '👁️ K8s View'
+            'user_k8s_view': '👁️ K8s View',
+            'user_cicd_full': '🚀 CI/CD Full',
+            'user_cicd_view': '👁️ CI/CD View'
         };
+
+        function roleBadges(roleStr) {
+            return (roleStr || '').split(',').map(r => r.trim()).filter(Boolean).map(r =>
+                `<span class="card-status ${r === 'admin' ? 'running' : 'stopped'}" style="width:fit-content;font-size:0.72rem;padding:0.15rem 0.5rem;">${roleIcons[r] || r}</span>`
+            ).join('');
+        }
 
         list.innerHTML = `
             <div class="table-container">
@@ -52,9 +60,9 @@ async function loadUsers() {
                                         <div style="font-weight: 600; color: #fff;">${u.username}</div>
                                     </td>
                                     <td>
-                                        <span class="card-status ${u.role === 'admin' ? 'running' : 'stopped'}" style="width: fit-content;">
-                                            ${roleIcons[u.role] || u.role}
-                                        </span>
+                                        <div style="display:flex;flex-wrap:wrap;gap:0.25rem;">
+                                            ${roleBadges(u.role)}
+                                        </div>
                                     </td>
                                     <td style="color: #94a3b8;">${new Date(u.created_at).toLocaleDateString()}</td>
                                     <td>
@@ -80,7 +88,31 @@ async function loadUsers() {
     }
 }
 
+function _roleCheckboxes(selectedRoles) {
+    const allRoles = [
+        { value: 'admin',             label: '👑 Admin' },
+        { value: 'user_docker',       label: '🐳 Docker Full' },
+        { value: 'user_docker_basic', label: '🐳 Docker Basic' },
+        { value: 'user_k8s_full',     label: '☸️ K8s Full' },
+        { value: 'user_k8s_view',     label: '👁️ K8s View' },
+        { value: 'user_cicd_full',    label: '🚀 CI/CD Full' },
+        { value: 'user_cicd_view',    label: '👁️ CI/CD View' },
+    ];
+    return `<div id="role-checkboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:0.75rem;">
+        ${allRoles.map(r => `
+        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;padding:0.3rem;border-radius:4px;color:#e2e8f0;font-size:0.85rem;">
+            <input type="checkbox" value="${r.value}" ${selectedRoles.includes(r.value) ? 'checked' : ''} style="cursor:pointer;accent-color:#6366f1;width:14px;height:14px;">
+            ${r.label}
+        </label>`).join('')}
+    </div>`;
+}
+
+function _getCheckedRoles() {
+    return Array.from(document.querySelectorAll('#role-checkboxes input[type=checkbox]:checked')).map(cb => cb.value);
+}
+
 function showEditUserModal(id, username, role) {
+    const currentRoles = (role || '').split(',').map(r => r.trim()).filter(Boolean);
     showModal(`Edit User: ${username}`, `
         <input type="hidden" id="edit-user-id" value="${id}">
         <div class="form-group">
@@ -88,18 +120,10 @@ function showEditUserModal(id, username, role) {
             <input type="text" id="edit-username" class="form-input" value="${username}" required>
         </div>
         <div class="form-group">
-            <label>Role</label>
-            <input type="hidden" id="original-username" value="${username}"> 
-            <!-- Prevent admin from locking themselves out if they are the only admin? UI doesn't handle complexity yet. -->
-            <select id="edit-role" class="form-input">
-                <option value="admin" ${role === 'admin' ? 'selected' : ''}>👑 Admin</option>
-                <option value="user_docker" ${role === 'user_docker' ? 'selected' : ''}>🐳 Docker Full</option>
-                <option value="user_docker_basic" ${role === 'user_docker_basic' ? 'selected' : ''}>🐳 Docker Basic</option>
-                <option value="user_k8s_full" ${role === 'user_k8s_full' ? 'selected' : ''}>☸️ K8s Full</option>
-                <option value="user_k8s_view" ${role === 'user_k8s_view' ? 'selected' : ''}>👁️ K8s View</option>
-            </select>
+            <label>Roles <small style="color:#64748b">(select one or more)</small></label>
+            ${_roleCheckboxes(currentRoles)}
         </div>
-         <div class="form-group">
+        <div class="form-group">
             <label>New Password <small style="color:#666">(leave blank to keep current)</small></label>
             <input type="password" id="edit-password" class="form-input" placeholder="New Password">
         </div>
@@ -110,10 +134,15 @@ function showEditUserModal(id, username, role) {
 async function submitEditUser() {
     const id = document.getElementById('edit-user-id').value;
     const username = document.getElementById('edit-username').value;
-    const role = document.getElementById('edit-role').value;
+    const roles = _getCheckedRoles();
     const password = document.getElementById('edit-password').value;
 
-    const payload = { username, role };
+    if (roles.length === 0) {
+        showToast('Please select at least one role', 'error');
+        return;
+    }
+
+    const payload = { username, roles };
     if (password) {
         payload.password = password;
     }
@@ -159,14 +188,8 @@ function showCreateUserModal() {
             <input type="password" id="new-password" class="form-input" required>
         </div>
         <div class="form-group">
-            <label>Role</label>
-            <select id="new-role" class="form-input">
-                <option value="admin">👑 Admin</option>
-                <option value="user_docker">🐳 Docker Full</option>
-                <option value="user_docker_basic">🐳 Docker Basic</option>
-                <option value="user_k8s_full">☸️ K8s Full</option>
-                <option value="user_k8s_view">👁️ K8s View</option>
-            </select>
+            <label>Roles <small style="color:#64748b">(select one or more)</small></label>
+            ${_roleCheckboxes([])}
         </div>
         <button class="btn btn-success" style="width: 100%;" onclick="submitCreateUser()">Create User</button>
     `);
@@ -175,10 +198,14 @@ function showCreateUserModal() {
 async function submitCreateUser() {
     const username = document.getElementById('new-username').value;
     const password = document.getElementById('new-password').value;
-    const role = document.getElementById('new-role').value;
+    const roles = _getCheckedRoles();
 
     if (!username || !password) {
         showToast('Username and password required', 'error');
+        return;
+    }
+    if (roles.length === 0) {
+        showToast('Please select at least one role', 'error');
         return;
     }
 
@@ -186,7 +213,7 @@ async function submitCreateUser() {
         const res = await fetch(`${API_BASE}/users`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, role })
+            body: JSON.stringify({ username, password, roles })
         });
 
         if (res.ok) {

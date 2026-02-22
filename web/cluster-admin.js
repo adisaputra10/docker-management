@@ -45,6 +45,8 @@ const state = {
     pageSize: 20,
     nsQuotas: {},
     nsUsage: {},
+    nodeMetrics: {},
+    podMetrics: {},
 };
 
 // ── Helper: Check if current user can create/delete (not view-only) ──
@@ -152,6 +154,7 @@ const RESOURCE_META = {
     statefulsets:           { label: 'StatefulSets', icon: '🗄️',  subtitle: 'Stateful application sets' },
     daemonsets:             { label: 'DaemonSets',   icon: '👾',  subtitle: 'Daemon sets' },
     jobs:                   { label: 'Jobs',          icon: '⚙️',  subtitle: 'Batch jobs' },
+    events:                 { label: 'Events',       icon: '📢',  subtitle: 'Cluster events' },
     services:               { label: 'Services',     icon: '🔗',  subtitle: 'Kubernetes services' },
     ingresses:              { label: 'Ingresses',    icon: '🌐',  subtitle: 'Ingress rules' },
     configmaps:             { label: 'ConfigMaps',   icon: '📄',  subtitle: 'Configuration maps' },
@@ -162,7 +165,7 @@ const RESOURCE_META = {
 };
 
 // Resources that support namespace filtering
-const NAMESPACED_RESOURCES = new Set(['deployments','pods','services','ingresses','configmaps','secrets','statefulsets','daemonsets','jobs','persistentvolumeclaims']);
+const NAMESPACED_RESOURCES = new Set(['deployments','pods','services','ingresses','configmaps','secrets','statefulsets','daemonsets','jobs','persistentvolumeclaims','events']);
 // Cluster-scoped resources (no namespace filter, no namespace dropdown)
 const CLUSTER_SCOPED = new Set(['nodes','namespaces','users']);
 
@@ -237,6 +240,23 @@ async function loadResource() {
             }
             data = await res.json();
             state.allItems = data.items || [];
+            
+            // If loading nodes, also fetch metrics
+            if (state.currentResource === 'nodes') {
+                try {
+                    const metricsRes = await fetch(`${API_BASE}/k0s/clusters/${state.clusterId}/k8s/nodes-metrics`);
+                    if (metricsRes.ok) {
+                        const metricsData = await metricsRes.json();
+                        state.nodeMetrics = (metricsData.items || []).reduce((acc, metric) => {
+                            acc[metric.metadata.name] = metric.usage || {};
+                            return acc;
+                        }, {});
+                    }
+                } catch (e) {
+                    log(`[loadResource] Warning: Could not fetch node metrics: ${e.message}`);
+                    state.nodeMetrics = {};
+                }
+            }
         } else {
             const ns = state.currentNamespace || 'all';
             url = `${API_BASE}/k0s/clusters/${state.clusterId}/k8s/${state.currentResource}?namespace=${ns}`;
@@ -247,6 +267,24 @@ async function loadResource() {
             }
             data = await res.json();
             state.allItems = data.items || [];
+            
+            // If loading pods or deployments, also fetch pod metrics
+            if (state.currentResource === 'pods' || state.currentResource === 'deployments') {
+                try {
+                    const metricsRes = await fetch(`${API_BASE}/k0s/clusters/${state.clusterId}/k8s/pods-metrics?namespace=${ns}`);
+                    if (metricsRes.ok) {
+                        const metricsData = await metricsRes.json();
+                        state.podMetrics = (metricsData.items || []).reduce((acc, metric) => {
+                            const key = (metric.metadata.namespace || 'default') + '/' + metric.metadata.name;
+                            acc[key] = metric.containers || [];
+                            return acc;
+                        }, {});
+                    }
+                } catch (e) {
+                    log(`[loadResource] Warning: Could not fetch pod metrics: ${e.message}`);
+                    state.podMetrics = {};
+                }
+            }
         }
         
         state.data = data;
@@ -292,6 +330,7 @@ function renderResource(resource, items) {
         case 'secrets':                return renderSecrets(items);
         case 'namespaces':             return renderNamespaces(items);
         case 'users':                  return renderUsers(items);
+        case 'events':                 return renderEvents(items);
         case 'statefulsets':
         case 'daemonsets':             return renderWorkloadGeneric(items, resource);
         default:                       return renderGeneric(items);
@@ -326,8 +365,51 @@ function renderNodes(items) {
         const version = n.status.nodeInfo?.kubeletVersion || '—';
         const ip = (n.status.addresses || []).find(a => a.type === 'InternalIP')?.address || '—';
         const os = n.status.nodeInfo?.osImage || '—';
-        const cpu = n.status.capacity?.cpu || '—';
-        const mem = n.status.capacity?.memory || '—';
+        const cpuCapacity = n.status.capacity?.cpu || '—';
+        const memCapacity = n.status.capacity?.memory || '—';
+        
+        // Get metrics for this node
+        const metrics = state.nodeMetrics[name] || {};
+        const cpuUsage = metrics.cpu || '—';
+        const memUsage = metrics.memory || '—';
+        
+        // Format display: show usage / capacity in cores (not millis/nanos)
+        let cpuDisplay = cpuUsage === '—' ? fmtCPU(cpuCapacity) : fmtCPU(cpuUsage) + ' / ' + fmtCPU(cpuCapacity);
+        let memDisplay = memUsage === '—' ? fmtMem(memCapacity) : fmtMem(memUsage) + ' / ' + fmtMem(memCapacity);
+        
+        // Calculate percentage if both available
+        let tooltip = '';
+        if (cpuUsage !== '—' && cpuCapacity !== '—') {
+            // Parse CPU values - handle both nanocores (n) and millicores (m)
+            let usageNum = 0, capacityNum = 0;
+            if (cpuUsage.endsWith('n')) {
+                usageNum = parseInt(cpuUsage.replace('n', '')) / 1000000000;
+            } else if (cpuUsage.endsWith('m')) {
+                usageNum = parseInt(cpuUsage.replace('m', '')) / 1000;
+            } else {
+                usageNum = parseFloat(cpuUsage);
+            }
+            if (cpuCapacity.endsWith('m')) {
+                capacityNum = parseInt(cpuCapacity.replace('m', '')) / 1000;
+            } else {
+                capacityNum = parseFloat(cpuCapacity);
+            }
+            if (!isNaN(usageNum) && !isNaN(capacityNum) && capacityNum > 0) {
+                const cpuPercent = ((usageNum / capacityNum) * 100).toFixed(1);
+                tooltip += `CPU: ${cpuPercent}% used\n`;
+            }
+        }
+        if (memUsage !== '—' && memCapacity !== '—') {
+            try {
+                const memUsageNum = parseInt(memUsage.replace('Ki', ''));
+                const memCapacityNum = parseInt(memCapacity.replace('Ki', ''));
+                if (!isNaN(memUsageNum) && !isNaN(memCapacityNum)) {
+                    const memPercent = ((memUsageNum / memCapacityNum) * 100).toFixed(1);
+                    tooltip += `Memory: ${memPercent}% used`;
+                }
+            } catch (e) {}
+        }
+        
         return `<tr>
             <td><strong>${name}</strong></td>
             <td>${statusBadge(ready ? 'Ready' : 'NotReady')}</td>
@@ -335,14 +417,21 @@ function renderNodes(items) {
             <td>${ip}</td>
             <td>${version}</td>
             <td>${os}</td>
-            <td>${cpu} / ${fmtMem(mem)}</td>
+            <td title="${tooltip}"><div style="display:flex;gap:0.5rem;align-items:center">
+                <span>${cpuDisplay}</span>
+                <span style="color:#94a3b8">│</span>
+                <span>${memDisplay}</span>
+            </div></td>
             <td style="color:#64748b">${age(n.metadata.creationTimestamp)}</td>
+            <td>
+                <button class="btn btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="showNodeLabelModal('${name}')">🏷️ Labels</button>
+            </td>
         </tr>`;
     }).join('');
     return `<table class="resource-table">
         <thead><tr>
             <th>Name</th><th>Status</th><th>Roles</th><th>IP</th>
-            <th>Version</th><th>OS</th><th>CPU / Memory</th><th>Age</th>
+            <th>Version</th><th>OS</th><th>CPU / Memory (Usage/Capacity)</th><th>Age</th><th>Actions</th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
@@ -391,6 +480,66 @@ function renderPods(items) {
         const nodeName = p.spec.nodeName || '—';
         const ip = p.status.podIP || '—';
         const hasDel = phase !== 'Succeeded' && canDelete;
+        
+        // Get aggregated CPU/Memory limits from container specs
+        let totalCpuLimit = '—', totalMemLimit = '—', totalCpuRequest = '—', totalMemRequest = '—';
+        let cpuLimitNum = 0, memLimitNum = 0, cpuReqNum = 0, memReqNum = 0;
+        (p.spec.containers || []).forEach(c => {
+            const res = c.resources || {};
+            const limits = res.limits || {};
+            const requests = res.requests || {};
+            
+            if (limits.cpu) {
+                if (limits.cpu.endsWith('m')) {
+                    cpuLimitNum += parseInt(limits.cpu) / 1000;
+                } else {
+                    cpuLimitNum += parseFloat(limits.cpu);
+                }
+            }
+            if (limits.memory) {
+                memLimitNum += parseInt(limits.memory.replace('Mi', '')) || 0;
+            }
+            if (requests.cpu) {
+                if (requests.cpu.endsWith('m')) {
+                    cpuReqNum += parseInt(requests.cpu) / 1000;
+                } else {
+                    cpuReqNum += parseFloat(requests.cpu);
+                }
+            }
+            if (requests.memory) {
+                memReqNum += parseInt(requests.memory.replace('Mi', '')) || 0;
+            }
+        });
+        
+        if (cpuLimitNum > 0) totalCpuLimit = fmtCPU((cpuLimitNum * 1000) + 'm');
+        if (memLimitNum > 0) totalMemLimit = memLimitNum + ' Mi';
+        if (cpuReqNum > 0) totalCpuRequest = fmtCPU((cpuReqNum * 1000) + 'm');
+        if (memReqNum > 0) totalMemRequest = memReqNum + ' Mi';
+        
+        // Get metrics for this pod
+        const metricKey = ns + '/' + name;
+        const podMetrics = state.podMetrics[metricKey] || [];
+        let totalCpuUsage = '—', totalMemUsage = '—';
+        let cpuUsageNum = 0, memUsageNum = 0;
+        podMetrics.forEach(mc => {
+            if (mc.usage?.cpu) {
+                if (mc.usage.cpu.endsWith('n')) {
+                    cpuUsageNum += parseInt(mc.usage.cpu) / 1000000000;
+                } else if (mc.usage.cpu.endsWith('m')) {
+                    cpuUsageNum += parseInt(mc.usage.cpu) / 1000;
+                }
+            }
+            if (mc.usage?.memory) {
+                memUsageNum += parseInt(mc.usage.memory.replace('Ki', '')) / 1024 || 0;
+            }
+        });
+        
+        if (cpuUsageNum > 0) totalCpuUsage = fmtCPU((cpuUsageNum * 1000) + 'm');
+        if (memUsageNum > 0) totalMemUsage = Math.round(memUsageNum) + ' Mi';
+        
+        const cpuDisplay = totalCpuUsage === '—' ? totalCpuLimit : totalCpuUsage + ' / ' + totalCpuLimit;
+        const memDisplay = totalMemUsage === '—' ? totalMemLimit : totalMemUsage + ' / ' + totalMemLimit;
+        
         return `<tr>
             <td><strong>${name}</strong></td>
             <td><span style="color:#64748b;font-size:0.75rem">${ns}</span></td>
@@ -399,6 +548,11 @@ function renderPods(items) {
             <td>${restarts > 0 ? `<span style="color:#f59e0b">${restarts}</span>` : restarts}</td>
             <td style="color:#94a3b8">${nodeName}</td>
             <td style="color:#94a3b8">${ip}</td>
+            <td><div style="display:flex;gap:0.5rem;align-items:center">
+                <span>${cpuDisplay}</span>
+                <span style="color:#94a3b8">│</span>
+                <span>${memDisplay}</span>
+            </div></td>
             <td style="color:#64748b">${age(p.metadata.creationTimestamp)}</td>
             <td>
                 <button class="btn btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick="showPodDetails('${name}','${ns}')">ℹ️ Details</button>
@@ -411,7 +565,40 @@ function renderPods(items) {
     return `<table class="resource-table">
         <thead><tr>
             <th>Name</th><th>Namespace</th><th>Status</th><th>Ready</th>
-            <th>Restarts</th><th>Node</th><th>IP</th><th>Age</th><th>Actions</th>
+            <th>Restarts</th><th>Node</th><th>IP</th><th>CPU / Memory (Usage/Limit)</th><th>Age</th><th>Actions</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+/* EVENTS */
+function renderEvents(items) {
+    const rows = items.map(e => {
+        const name = e.metadata.name || '—';
+        const ns = e.metadata.namespace || '—';
+        const involvedObj = e.involvedObject || {};
+        const objType = involvedObj.kind || '—';
+        const objName = involvedObj.name || '—';
+        const reason = e.reason || '—';
+        const message = e.message || '—';
+        const type = e.type || 'Normal';
+        const msgPreview = message.length > 60 ? message.substring(0, 60) + '...' : message;
+        const typeColor = type === 'Warning' ? '#f59e0b' : (type === 'Error' ? '#ef4444' : '#10b981');
+        return `<tr>
+            <td><strong>${name}</strong></td>
+            <td><span style="color:#64748b;font-size:0.75rem">${ns}</span></td>
+            <td>${objType}</td>
+            <td><strong>${objName}</strong></td>
+            <td><span style="color:${typeColor};font-weight:500">${type}</span></td>
+            <td><strong>${reason}</strong></td>
+            <td title="${message}" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;color:#94a3b8">${msgPreview}</td>
+            <td style="color:#64748b">${age(e.lastTimestamp)}</td>
+        </tr>`;
+    }).join('');
+    return `<table class="resource-table">
+        <thead><tr>
+            <th>Name</th><th>Namespace</th><th>Type</th><th>Object</th>
+            <th>Event Type</th><th>Reason</th><th>Message</th><th>Age</th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
@@ -428,6 +615,32 @@ function renderDeployments(items) {
         const available = d.status.availableReplicas || 0;
         const images = (d.spec.template.spec.containers || []).map(c => c.image.split('/').pop()).join(', ');
         const statusStr = ready === desired ? 'Available' : (ready > 0 ? 'Partial' : 'Unavailable');
+        
+        // Calculate aggregated pod template limits
+        let totalCpuLimit = '—', totalMemLimit = '—';
+        let cpuLimitNum = 0, memLimitNum = 0;
+        (d.spec.template.spec.containers || []).forEach(c => {
+            const res = c.resources || {};
+            const limits = res.limits || {};
+            
+            if (limits.cpu) {
+                if (limits.cpu.endsWith('m')) {
+                    cpuLimitNum += parseInt(limits.cpu) / 1000;
+                } else {
+                    cpuLimitNum += parseFloat(limits.cpu);
+                }
+            }
+            if (limits.memory) {
+                memLimitNum += parseInt(limits.memory.replace('Mi', '')) || 0;
+            }
+        });
+        
+        if (cpuLimitNum > 0) totalCpuLimit = fmtCPU((cpuLimitNum * 1000) + 'm');
+        if (memLimitNum > 0) totalMemLimit = memLimitNum + ' Mi';
+        
+        const cpuMemDisplay = totalCpuLimit !== '—' || totalMemLimit !== '—' ? 
+            `${totalCpuLimit} / ${totalMemLimit}` : '—';
+        
         return `<tr style="cursor:pointer;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.05)'" onmouseout="this.style.background=''" onclick="viewDeploymentDetail('${name}','${ns}')">
             <td><strong>📦 ${name}</strong></td>
             <td><span style="color:#64748b;font-size:0.75rem">${ns}</span></td>
@@ -435,6 +648,7 @@ function renderDeployments(items) {
             <td>${ready}/${desired}</td>
             <td>${available}</td>
             <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;color:#94a3b8">${images}</td>
+            <td>${cpuMemDisplay}</td>
             <td style="color:#64748b">${age(d.metadata.creationTimestamp)}</td>
             <td onclick="event.stopPropagation()">
                 ${canEdit ? `<button class="btn btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem;margin-right:0.2rem" onclick="editResource('deployments','${name}','${ns}')">✏️ Edit</button>` : ''}
@@ -445,7 +659,7 @@ function renderDeployments(items) {
     return `<table class="resource-table">
         <thead><tr>
             <th>Name</th><th>Namespace</th><th>Status</th><th>Ready</th>
-            <th>Available</th><th>Image</th><th>Age</th><th>Actions</th>
+            <th>Available</th><th>Image</th><th>Pod Limits (CPU/Memory)</th><th>Age</th><th>Actions</th>
         </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
@@ -696,6 +910,30 @@ function renderUsers(items) {
     </table>`;
 }
 
+// Role checkboxes helper for cluster-admin
+function _caRoleCheckboxes(selectedRoles) {
+    const allRoles = [
+        { value: 'admin',             label: '\ud83d\udc51 admin' },
+        { value: 'user_docker',       label: '\ud83d\udc33 user_docker' },
+        { value: 'user_docker_basic', label: '\ud83d\udc33 user_docker_basic' },
+        { value: 'user_k8s_full',     label: '\u2638\ufe0f user_k8s_full' },
+        { value: 'user_k8s_view',     label: '\ud83d\udc41\ufe0f user_k8s_view' },
+        { value: 'user_cicd_full',    label: '\ud83d\ude80 user_cicd_full' },
+        { value: 'user_cicd_view',    label: '\ud83d\udc41\ufe0f user_cicd_view' },
+    ];
+    return `<div id="ca-role-checkboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:0.35rem;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:0.6rem;">
+        ${allRoles.map(r => `
+        <label style="display:flex;align-items:center;gap:0.4rem;cursor:pointer;padding:0.25rem;color:#e2e8f0;font-size:0.8rem;">
+            <input type="checkbox" value="${r.value}" ${selectedRoles.includes(r.value) ? 'checked' : ''} style="cursor:pointer;accent-color:#6366f1;">
+            ${r.label}
+        </label>`).join('')}
+    </div>`;
+}
+
+function _caGetCheckedRoles() {
+    return Array.from(document.querySelectorAll('#ca-role-checkboxes input[type=checkbox]:checked')).map(cb => cb.value);
+}
+
 // Create new user modal
 function showCreateUserModal() {
     const modal = document.createElement('div');
@@ -719,14 +957,8 @@ function showCreateUserModal() {
                             style="width:100%;padding:0.5rem;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;font-size:0.85rem;">
                     </div>
                     <div>
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.35rem;">Role</label>
-                        <select id="new-user-role" style="width:100%;padding:0.5rem;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;font-size:0.85rem;">
-                            <option value="admin">👤 admin (cluster admin)</option>
-                            <option value="user_docker">🐳 user_docker (full access)</option>
-                            <option value="user_docker_basic">🐳 user_docker_basic (basic access)</option>
-                            <option value="user_k8s_full">☸️ user_k8s_full (full access)</option>
-                            <option value="user_k8s_view">👁️ user_k8s_view (read-only)</option>
-                        </select>
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.35rem;">Roles <small style="color:#64748b">(select one or more)</small></label>
+                        ${_caRoleCheckboxes([])}
                     </div>
                     <div style="display:flex;gap:0.5rem;">
                         <button class="btn btn-primary" onclick="saveNewUser()" style="flex:1;">Create</button>
@@ -743,10 +975,14 @@ function showCreateUserModal() {
 async function saveNewUser() {
     const username = document.getElementById('new-user-username').value.trim();
     const password = document.getElementById('new-user-password').value;
-    const role = document.getElementById('new-user-role').value;
+    const roles = _caGetCheckedRoles();
     
     if (!username || !password) {
         alert('Username and password required');
+        return;
+    }
+    if (roles.length === 0) {
+        alert('Please select at least one role');
         return;
     }
     
@@ -757,7 +993,7 @@ async function saveNewUser() {
                 'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ username, password, role })
+            body: JSON.stringify({ username, password, roles })
         });
         
         if (res.ok) {
@@ -797,14 +1033,8 @@ function showEditUserModal(userId, username, role) {
                             style="width:100%;padding:0.5rem;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;font-size:0.85rem;">
                     </div>
                     <div>
-                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.35rem;">Role</label>
-                        <select id="edit-user-role" style="width:100%;padding:0.5rem;background:#1a1f2e;border:1px solid rgba(255,255,255,0.1);color:#f1f5f9;border-radius:8px;font-size:0.85rem;">
-                            <option value="admin" ${role === 'admin' ? 'selected' : ''}>👤 admin (cluster admin)</option>
-                            <option value="user_docker" ${role === 'user_docker' ? 'selected' : ''}>🐳 user_docker (full access)</option>
-                            <option value="user_docker_basic" ${role === 'user_docker_basic' ? 'selected' : ''}>🐳 user_docker_basic (basic access)</option>
-                            <option value="user_k8s_full" ${role === 'user_k8s_full' ? 'selected' : ''}>☸️ user_k8s_full (full access)</option>
-                            <option value="user_k8s_view" ${role === 'user_k8s_view' ? 'selected' : ''}>👁️ user_k8s_view (read-only)</option>
-                        </select>
+                        <label style="font-size:0.8rem;color:#94a3b8;display:block;margin-bottom:0.35rem;">Roles <small style="color:#64748b">(select one or more)</small></label>
+                        ${_caRoleCheckboxes((role || '').split(',').map(r => r.trim()).filter(Boolean))}
                     </div>
                     <div style="display:flex;gap:0.5rem;">
                         <button class="btn btn-primary" onclick='saveEditUser("${userId}")' style="flex:1;">Update</button>
@@ -820,16 +1050,15 @@ function showEditUserModal(userId, username, role) {
 
 async function saveEditUser(userId) {
     const password = document.getElementById('edit-user-password').value;
-    const role = document.getElementById('edit-user-role').value;
+    const roles = _caGetCheckedRoles();
     
-    const body = {};
-    if (password) body.password = password;
-    if (role) body.role = role;
-    
-    if (Object.keys(body).length === 0) {
-        alert('No changes made');
+    if (roles.length === 0) {
+        alert('Please select at least one role');
         return;
     }
+    
+    const body = { roles };
+    if (password) body.password = password;
     
     try {
         const res = await fetch(`${API_BASE}/users/${userId}`, {
@@ -1052,12 +1281,23 @@ function renderAll() {
     const selOpts = [10, 20, 50, 100].map(n =>
         `<option value="${n}" ${state.pageSize === n ? 'selected' : ''}>${n} / page</option>`
     ).join('');
-    const createBtnHtml = canCreate ? `<div style="position:relative;display:inline-block">
-        <button class="btn btn-primary" onclick="toggleCreateMenu(event)" style="padding:0.38rem 0.9rem;font-size:0.82rem">➕ Create</button>
-        <div id="create-menu" style="position:absolute;top:100%;right:0;background:#1a1f2e;border:1px solid rgba(255,255,255,0.12);border-radius:8px;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;margin-top:0.3rem;display:none">
+    
+    // Build create menu options based on current resource
+    let createMenuItems = `
             <div onclick="openDeploymentFormModal();toggleCreateMenu()" style="padding:0.6rem 1rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.82rem;color:#e2e8f0;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background=''">📦 Deployment</div>
             <div onclick="openServiceFormModal();toggleCreateMenu()" style="padding:0.6rem 1rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.82rem;color:#e2e8f0;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background=''">🔌 Service</div>
             <div onclick="openIngressFormModal();toggleCreateMenu()" style="padding:0.6rem 1rem;cursor:pointer;font-size:0.82rem;color:#e2e8f0;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background=''">🌐 Ingress</div>
+    `;
+    
+    // Add namespace option if viewing namespaces
+    if (state.currentResource === 'namespaces') {
+        createMenuItems = `<div onclick="openNamespaceFormModal();toggleCreateMenu()" style="padding:0.6rem 1rem;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.06);font-size:0.82rem;color:#e2e8f0;transition:background 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.08)'" onmouseout="this.style.background=''">📋 Namespace</div>` + createMenuItems;
+    }
+    
+    const createBtnHtml = canCreate ? `<div style="position:relative;display:inline-block">
+        <button class="btn btn-primary" onclick="toggleCreateMenu(event)" style="padding:0.38rem 0.9rem;font-size:0.82rem">➕ Create</button>
+        <div id="create-menu" style="position:absolute;top:100%;right:0;background:#1a1f2e;border:1px solid rgba(255,255,255,0.12);border-radius:8px;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.3);z-index:1000;margin-top:0.3rem;display:none">
+            ${createMenuItems}
         </div>
     </div>` : '';
     const toolbarHtml = `<div style="display:flex;align-items:center;gap:0.6rem;margin-bottom:0.85rem;flex-wrap:wrap;background:rgba(255,255,255,0.03);padding:0.6rem 0.85rem;border-radius:10px;border:1px solid rgba(255,255,255,0.06)">
@@ -1350,14 +1590,42 @@ document.addEventListener('click', () => {
     if (menu) menu.style.display = 'none';
 });
 
+// ── Helper: Populate namespace select dropdowns ────────────────────────────────────
+function populateNamespaceSelects(...selectIds) {
+    selectIds.forEach(id => {
+        const sel = document.getElementById(id);
+        if (!sel) return;
+        // Clear existing options except the first one
+        sel.innerHTML = '';
+        // Add all available namespaces
+        (state.namespaces || []).forEach(ns => {
+            const opt = document.createElement('option');
+            opt.value = ns;
+            opt.textContent = ns;
+            sel.appendChild(opt);
+        });
+        // Set default to first namespace or 'default'
+        if (state.namespaces && state.namespaces.length > 0) {
+            sel.value = state.namespaces[0];
+        } else {
+            const opt = document.createElement('option');
+            opt.value = 'default';
+            opt.textContent = 'default';
+            sel.appendChild(opt);
+            sel.value = 'default';
+        }
+    });
+}
+
 // ── Deployment Form ────────────────────────────────────
 function openDeploymentFormModal() {
     document.getElementById('dep-name').value = '';
-    document.getElementById('dep-namespace').value = 'default';
+    populateNamespaceSelects('dep-namespace');
     document.getElementById('dep-image').value = '';
     document.getElementById('dep-replicas').value = '1';
     document.getElementById('dep-port').value = '80';
     document.getElementById('dep-label').value = '';
+    document.getElementById('dep-node-selector').value = '';
     document.getElementById('dep-cpu-req').value = '100m';
     document.getElementById('dep-cpu-lim').value = '100m';
     document.getElementById('dep-mem-req').value = '128Mi';
@@ -1383,6 +1651,18 @@ async function submitDeploymentForm() {
     let label = document.getElementById('dep-label').value.trim();
     if (!label) label = name;
 
+    // Parse node selector
+    const nodeSelectorText = document.getElementById('dep-node-selector').value.trim();
+    const nodeSelector = {};
+    if (nodeSelectorText) {
+        const lines = nodeSelectorText.split('\n').map(l => l.trim()).filter(l => l);
+        for (const line of lines) {
+            const [key, value] = line.split('=');
+            if (!key || !value) continue;
+            nodeSelector[key.trim()] = value.trim();
+        }
+    }
+
     const errEl = document.getElementById('deployment-form-error');
     errEl.textContent = '';
 
@@ -1390,9 +1670,9 @@ async function submitDeploymentForm() {
     if (!image) { errEl.textContent = 'Docker image is required'; return; }
 
     // Log yang jelas untuk debug
-    console.log(`[Deployment] Creating: name=${name}, namespace=${ns}, image=${image}, replicas=${replicas}, port=${port}, cpu=${cpuReq}/${cpuLim}, mem=${memReq}/${memLim}`);
+    console.log(`[Deployment] Creating: name=${name}, namespace=${ns}, image=${image}, replicas=${replicas}, port=${port}, cpu=${cpuReq}/${cpuLim}, mem=${memReq}/${memLim}, nodeSelector=${JSON.stringify(nodeSelector)}`);
 
-    const yaml = `apiVersion: apps/v1
+    let yaml = `apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ${name}
@@ -1406,7 +1686,19 @@ spec:
     metadata:
       labels:
         app: ${label}
-    spec:
+    spec:`;
+    
+    // Add nodeSelector if provided
+    if (Object.keys(nodeSelector).length > 0) {
+        yaml += `
+      nodeSelector:`;
+        for (const [key, value] of Object.entries(nodeSelector)) {
+            yaml += `
+        ${key}: ${value}`;
+        }
+    }
+    
+    yaml += `
       containers:
       - name: ${name}
         image: ${image}
@@ -1438,7 +1730,7 @@ spec:
 // ── Service Form ────────────────────────────────────
 function openServiceFormModal() {
     document.getElementById('svc-name').value = '';
-    document.getElementById('svc-namespace').value = 'default';
+    populateNamespaceSelects('svc-namespace');
     document.getElementById('svc-type').value = 'ClusterIP';
     document.getElementById('svc-selector').value = '';
     document.getElementById('svc-port').value = '80';
@@ -1500,7 +1792,7 @@ spec:
 // ── Ingress Form ────────────────────────────────────
 function openIngressFormModal() {
     document.getElementById('ing-name').value = '';
-    document.getElementById('ing-namespace').value = 'default';
+    populateNamespaceSelects('ing-namespace');
     document.getElementById('ing-hostname').value = '';
     document.getElementById('ing-service').value = '';
     document.getElementById('ing-port').value = '80';
@@ -1561,6 +1853,11 @@ spec:
     } catch (e) {
         errEl.textContent = e.message;
     }
+}
+
+// ── Namespace Form Modal (alias for consistency) ────────────────────────────────────
+function openNamespaceFormModal() {
+    openNsCreateModal();
 }
 
 // ── Namespace CRUD ────────────────────────────────────────
@@ -1669,6 +1966,73 @@ async function deleteNamespace(name) {
         await loadResource();
     } catch (e) {
         alert(`Failed to delete namespace: ${e.message}`);
+    }
+}
+
+// ── Node Labels Modal ──────────────────────────────────
+let _nodeLabelCurrent = '';
+
+function showNodeLabelModal(nodeName) {
+    _nodeLabelCurrent = nodeName;
+    document.getElementById('node-label-title').textContent = `🏷️ Node Labels — ${nodeName}`;
+    document.getElementById('node-label-input').value = '';
+    document.getElementById('node-label-error').textContent = '';
+    document.getElementById('node-label-modal').classList.add('open');
+    setTimeout(() => document.getElementById('node-label-input').focus(), 100);
+}
+
+function closeNodeLabelModal() {
+    document.getElementById('node-label-modal').classList.remove('open');
+}
+
+async function submitNodeLabels() {
+    const input = document.getElementById('node-label-input').value.trim();
+    const errEl = document.getElementById('node-label-error');
+    const btn = document.getElementById('node-label-submit');
+    
+    if (!input) {
+        errEl.textContent = 'Please enter at least one label.';
+        return;
+    }
+    
+    // Parse labels from input (format: key=value, one per line)
+    const lines = input.split('\n').filter(l => l.trim());
+    const labels = {};
+    
+    for (const line of lines) {
+        const parts = line.split('=');
+        if (parts.length !== 2) {
+            errEl.textContent = `Invalid format: "${line}". Use key=value format.`;
+            return;
+        }
+        const key = parts[0].trim();
+        const value = parts[1].trim();
+        if (!key || !value) {
+            errEl.textContent = `Invalid format: "${line}". Key and value cannot be empty.`;
+            return;
+        }
+        labels[key] = value;
+    }
+    
+    btn.disabled = true;
+    btn.textContent = 'Updating…';
+    errEl.textContent = '';
+    
+    try {
+        const res = await fetch(`${API_BASE}/k0s/clusters/${state.clusterId}/k8s/nodes/${_nodeLabelCurrent}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ labels }),
+        });
+        const txt = await res.text();
+        if (!res.ok) throw new Error(txt);
+        closeNodeLabelModal();
+        await loadResource();
+    } catch (e) {
+        errEl.textContent = e.message;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Update Labels';
     }
 }
 
@@ -2001,6 +2365,36 @@ function getAge(creationTimestamp) {
 }
 
 // ── Helpers ───────────────────────────────────────────
+function fmtCPU(cpu) {
+    if (!cpu) return '—';
+    let cores = 0;
+    // Handle nanocores (n)
+    if (cpu.endsWith('n')) {
+        const nanos = parseInt(cpu.replace('n', ''));
+        if (isNaN(nanos)) return cpu;
+        cores = nanos / 1000000000; // 1 billion nanocores = 1 core
+    }
+    // Handle millicores (m)
+    else if (cpu.endsWith('m')) {
+        const millis = parseInt(cpu.replace('m', ''));
+        if (isNaN(millis)) return cpu;
+        cores = millis / 1000; // 1000 millicores = 1 core
+    }
+    // Handle plain number (assume it's already in cores)
+    else {
+        cores = parseFloat(cpu);
+        if (isNaN(cores)) return cpu;
+    }
+    
+    if (cores < 1) {
+        return cores.toFixed(3) + ' core';
+    } else if (cores === 1) {
+        return '1 core';
+    } else {
+        return cores.toFixed(1) + ' core';
+    }
+}
+
 function fmtMem(mem) {
     if (!mem) return '—';
     const ki = parseInt(mem.replace('Ki', ''));
