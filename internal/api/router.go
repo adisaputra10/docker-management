@@ -161,5 +161,15 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/cicd/scans/{id}", GetScanReport).Methods("GET")
 	api.HandleFunc("/cicd/scans/{id}", DeleteScanReport).Methods("DELETE")
 
+	// GitOps
+	api.HandleFunc("/cicd/gitops/repos", ListGitopsRepos).Methods("GET")
+	api.HandleFunc("/cicd/gitops/repos", CreateGitopsRepo).Methods("POST")
+	api.HandleFunc("/cicd/gitops/repos/{id}", DeleteGitopsRepo).Methods("DELETE")
+	api.HandleFunc("/cicd/gitops/deployments", ListDeployments).Methods("GET")
+	api.HandleFunc("/cicd/gitops/deployments", CreateDeployment).Methods("POST")
+	api.HandleFunc("/cicd/gitops/deployments/{id}", GetDeployment).Methods("GET")
+	api.HandleFunc("/cicd/gitops/deployments/{id}/deploy", TriggerDeploy).Methods("POST")
+	api.HandleFunc("/cicd/gitops/deployments/{id}", DeleteDeployment).Methods("DELETE")
+
 	return r
 }

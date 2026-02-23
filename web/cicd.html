@@ -318,6 +318,10 @@
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
                 Registry
             </button>
+            <button class="menu-item" id="menu-gitops" onclick="showSection('gitops')">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v1a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V9"/><line x1="12" y1="12" x2="12" y2="15"/></svg>
+                GitOps
+            </button>
             <div class="menu-divider"></div>
             <button class="menu-item" id="menu-workspace" onclick="showSection('workspace')">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
@@ -479,6 +483,34 @@
                         <div class="empty-icon">🗄️</div>
                         <div>No registries added. Connect a registry to push/pull images in your pipelines.</div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GITOPS SECTION -->
+        <div id="section-gitops" style="display:none">
+            <div class="section-card" style="margin-bottom:1rem">
+                <div class="section-header">
+                    <span class="section-title">🔀 Git Repositories</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openGitopsRepoModal()">+ Add Repo</button>
+                </div>
+                <div id="gitops-repos-body">
+                    <div class="empty-state"><div class="empty-icon">🔀</div><div>No repositories added. Add a Git repo to get started.</div></div>
+                </div>
+            </div>
+            <div class="section-card">
+                <div class="section-header">
+                    <span class="section-title">🚀 Deployments</span>
+                    <button class="btn btn-primary btn-sm can-write" onclick="openDeployModal(null)">+ New Deployment</button>
+                </div>
+                <div id="gitops-repo-filter-bar" style="padding:0 0 0.7rem 0;display:flex;align-items:center;gap:0.5rem">
+                    <label style="font-size:0.82rem;color:#64748b">Filter by repo:</label>
+                    <select id="gitops-repo-filter" onchange="loadGitopsDeployments()" style="font-size:0.82rem;padding:0.25rem 0.5rem;border-radius:6px;border:1px solid #e2e8f0">
+                        <option value="">All Repos</option>
+                    </select>
+                </div>
+                <div id="gitops-deployments-body">
+                    <div class="empty-state"><div class="empty-icon">🚀</div><div>No deployments yet. Create one to deploy to Kubernetes.</div></div>
                 </div>
             </div>
         </div>
@@ -858,6 +890,101 @@ sudo apt-get update -y && sudo apt-get install -y git curl jq build-essential
     </div>
 </div>
 
+<!-- GITOPS REPO MODAL -->
+<div class="modal-overlay" id="gitops-repo-modal">
+    <div class="modal-box" style="max-width:520px">
+        <div class="modal-title">🔀 Add Git Repository</div>
+        <div class="form-group">
+            <label class="form-label">Repository Name *</label>
+            <input class="form-input" id="gr-name" type="text" placeholder="e.g. my-app" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Repository URL *</label>
+            <input class="form-input" id="gr-url" type="text" placeholder="https://github.com/org/repo.git" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Branch</label>
+            <input class="form-input" id="gr-branch" type="text" value="main" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Auth Type</label>
+            <select class="form-input" id="gr-auth-type" onchange="onGrAuthTypeChange()">
+                <option value="none">🔓 None (Public)</option>
+                <option value="token">🔑 Token / Password</option>
+            </select>
+        </div>
+        <div class="form-group" id="gr-token-wrap" style="display:none">
+            <label class="form-label">Access Token / Password *</label>
+            <input class="form-input" id="gr-token" type="password" placeholder="Personal access token" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Description</label>
+            <input class="form-input" id="gr-desc" type="text" placeholder="Optional" autocomplete="off">
+        </div>
+        <div class="form-error" id="gr-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeGitopsRepoModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitGitopsRepoForm()">Add Repository</button>
+        </div>
+    </div>
+</div>
+
+<!-- GITOPS DEPLOY MODAL -->
+<div class="modal-overlay" id="gitops-deploy-modal">
+    <div class="modal-box" style="max-width:560px">
+        <div class="modal-title">🚀 New Deployment</div>
+        <div class="form-group">
+            <label class="form-label">Deployment Name *</label>
+            <input class="form-input" id="gd-name" type="text" placeholder="e.g. app-staging" autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label class="form-label">Source Repository</label>
+            <select class="form-input" id="gd-repo">
+                <option value="">— None —</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Deploy Type *</label>
+            <select class="form-input" id="gd-type" onchange="onGdTypeChange()">
+                <option value="kubectl">☸ kubectl apply</option>
+                <option value="helm">⎈ Helm upgrade</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Namespace</label>
+            <input class="form-input" id="gd-namespace" type="text" value="default" autocomplete="off">
+        </div>
+        <!-- kubectl fields -->
+        <div id="gd-kubectl-fields">
+            <div class="form-group">
+                <label class="form-label">Manifest Path *</label>
+                <input class="form-input" id="gd-manifest" type="text" placeholder="e.g. /home/user/app/k8s/" autocomplete="off">
+                <div style="font-size:0.73rem;color:#64748b;margin-top:0.25rem">Local path or URL to the manifest file/directory.</div>
+            </div>
+        </div>
+        <!-- helm fields -->
+        <div id="gd-helm-fields" style="display:none">
+            <div class="form-group">
+                <label class="form-label">Chart Path *</label>
+                <input class="form-input" id="gd-chart" type="text" placeholder="e.g. ./charts/myapp  or  stable/nginx" autocomplete="off">
+            </div>
+            <div class="form-group">
+                <label class="form-label">Values Override (YAML, optional)</label>
+                <textarea class="form-input" id="gd-values" rows="4" placeholder="image:\n  tag: latest" style="font-family:monospace;font-size:0.8rem;resize:vertical"></textarea>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="form-label">Kube Context (optional)</label>
+            <input class="form-input" id="gd-context" type="text" placeholder="e.g. my-cluster-context" autocomplete="off">
+        </div>
+        <div class="form-error" id="gd-form-error"></div>
+        <div class="modal-actions">
+            <button class="btn btn-ghost" onclick="closeDeployModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitDeployForm()">Create Deployment</button>
+        </div>
+    </div>
+</div>
+
 <!-- PIPELINE FORM MODAL -->
 <div class="modal-overlay" id="pipeline-modal">
     <div class="modal-box">
@@ -1148,7 +1275,7 @@ function filteredByWs(arr) {
 
 // ── Section Navigation ────────────────────────────────────
 function showSection(name) {
-    ['overview','pipelines','builds','deployments','security','repos','registry','secrets','workspace','wsusers','workers'].forEach(s => {
+    ['overview','pipelines','builds','deployments','security','repos','registry','secrets','gitops','workspace','wsusers','workers'].forEach(s => {
         const el = document.getElementById('section-' + s);
         if (el) el.style.display = s === name ? '' : 'none';
         const btn = document.getElementById('menu-' + s);
@@ -1161,6 +1288,7 @@ function showSection(name) {
     if (name === 'registry')    renderRegistries();
     if (name === 'workers')     renderWorkers();
     if (name === 'security')    renderSecuritySection();
+    if (name === 'gitops')      loadGitopsRepos();
 }
 
 // ── Overview ──────────────────────────────────────────────
@@ -2389,6 +2517,213 @@ function timeAgo(iso) {
     if (diff < 3600)  return Math.round(diff/60) + 'm ago';
     if (diff < 86400) return Math.round(diff/3600) + 'h ago';
     return Math.round(diff/86400) + 'd ago';
+}
+
+// ── GitOps ────────────────────────────────────────────────
+let _gitopsRepos = [];
+
+async function loadGitopsRepos() {
+    const wsId = cicdState.currentWsId || '';
+    const qs = wsId ? `?workspace_id=${wsId}` : '';
+    try {
+        const res = await fetch(`${API_BASE}/cicd/gitops/repos${qs}`);
+        _gitopsRepos = await res.json();
+    } catch(e) { _gitopsRepos = []; }
+    renderGitopsRepos();
+    populateGitopsRepoFilter();
+    loadGitopsDeployments();
+}
+
+function renderGitopsRepos() {
+    const el = document.getElementById('gitops-repos-body');
+    if (!_gitopsRepos || _gitopsRepos.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">🔀</div><div>No repositories added. Click "+ Add Repo" to connect a Git repository.</div></div>`;
+        return;
+    }
+    el.innerHTML = `<table>
+        <thead><tr><th>Name</th><th>URL</th><th>Branch</th><th>Auth</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody>${_gitopsRepos.map(r => `
+            <tr>
+                <td><strong>${escapeHtml(r.name)}</strong></td>
+                <td style="font-size:0.8rem;color:#818cf8;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(r.url)}">${escapeHtml(r.url)}</td>
+                <td><code style="font-size:0.75rem;color:#818cf8">${escapeHtml(r.branch || 'main')}</code></td>
+                <td><span class="badge badge-${r.auth_type === 'token' ? 'running' : 'stopped'}">${r.auth_type === 'token' ? '🔑 Token' : '🔓 None'}</span></td>
+                <td style="color:#64748b;font-size:0.8rem">${timeAgo(r.created_at)}</td>
+                <td><button class="btn btn-danger btn-sm can-write" onclick="deleteGitopsRepo(${r.id})">Delete</button></td>
+            </tr>`).join('')}
+        </tbody></table>`;
+}
+
+function populateGitopsRepoFilter() {
+    const sel = document.getElementById('gitops-repo-filter');
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">All Repos</option>';
+    _gitopsRepos.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = r.name;
+        if (String(r.id) === cur) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+
+async function loadGitopsDeployments() {
+    const wsId = cicdState.currentWsId || '';
+    const repoId = document.getElementById('gitops-repo-filter').value;
+    let qs = [];
+    if (wsId)   qs.push(`workspace_id=${wsId}`);
+    if (repoId) qs.push(`repo_id=${repoId}`);
+    const qstr = qs.length ? '?' + qs.join('&') : '';
+    let deployments = [];
+    try {
+        const res = await fetch(`${API_BASE}/cicd/gitops/deployments${qstr}`);
+        deployments = await res.json();
+    } catch(e) { deployments = []; }
+    renderGitopsDeployments(deployments);
+}
+
+function renderGitopsDeployments(list) {
+    const el = document.getElementById('gitops-deployments-body');
+    if (!list || list.length === 0) {
+        el.innerHTML = `<div class="empty-state"><div class="empty-icon">🚀</div><div>No deployments yet. Click "+ New Deployment" to create one.</div></div>`;
+        return;
+    }
+    el.innerHTML = `<table>
+        <thead><tr><th>Name</th><th>Type</th><th>Namespace</th><th>Repo</th><th>Status</th><th>Last Deploy</th><th>Actions</th></tr></thead>
+        <tbody>${list.map(d => `
+            <tr>
+                <td><strong>${escapeHtml(d.name)}</strong></td>
+                <td><span class="badge ${d.deploy_type === 'helm' ? 'badge-running' : 'badge-pending'}">${d.deploy_type === 'helm' ? '⎈ Helm' : '☸ kubectl'}</span></td>
+                <td><code style="font-size:0.75rem;color:#818cf8">${escapeHtml(d.namespace || 'default')}</code></td>
+                <td style="color:#64748b;font-size:0.8rem">${d.repo_name ? escapeHtml(d.repo_name) : '—'}</td>
+                <td>${statusBadge(d.status || 'pending')}</td>
+                <td style="color:#64748b;font-size:0.8rem">${d.deployed_at ? timeAgo(d.deployed_at) : '—'}</td>
+                <td style="display:flex;gap:0.4rem">
+                    <button class="btn btn-primary btn-sm can-write" onclick="triggerGitopsDeploy(${d.id})">▶ Deploy</button>
+                    ${d.last_output ? `<button class="btn btn-ghost btn-sm" onclick="showDeployOutput(${d.id},'${escapeHtml(d.name).replace(/'/g, '\\\'')}',${JSON.stringify(d.last_output || '').replace(/\\/g,'\\\\')})" >📋 Log</button>` : ''}
+                    <button class="btn btn-danger btn-sm can-write" onclick="deleteGitopsDeploy(${d.id})">Delete</button>
+                </td>
+            </tr>`).join('')}
+        </tbody></table>`;
+}
+
+async function triggerGitopsDeploy(id) {
+    if (!confirm('Trigger deployment now?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/cicd/gitops/deployments/${id}/deploy`, { method: 'POST' });
+        const data = await res.json();
+        alert(data.message || 'Deployment triggered!');
+        setTimeout(loadGitopsDeployments, 1500);
+    } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function showDeployOutput(id, name, output) {
+    alert(`[${name}] Last Output:\n\n${output || '(empty)'}`);
+}
+
+async function deleteGitopsRepo(id) {
+    if (!confirm('Delete this repository? Associated deployments will lose their repo link.')) return;
+    await fetch(`${API_BASE}/cicd/gitops/repos/${id}`, { method: 'DELETE' });
+    loadGitopsRepos();
+}
+
+async function deleteGitopsDeploy(id) {
+    if (!confirm('Delete this deployment?')) return;
+    await fetch(`${API_BASE}/cicd/gitops/deployments/${id}`, { method: 'DELETE' });
+    loadGitopsDeployments();
+}
+
+// ── GitOps Repo Modal ─────────────────────────────────────
+function openGitopsRepoModal() {
+    document.getElementById('gr-name').value = '';
+    document.getElementById('gr-url').value = '';
+    document.getElementById('gr-branch').value = 'main';
+    document.getElementById('gr-auth-type').value = 'none';
+    document.getElementById('gr-token').value = '';
+    document.getElementById('gr-token-wrap').style.display = 'none';
+    document.getElementById('gr-desc').value = '';
+    document.getElementById('gr-form-error').textContent = '';
+    document.getElementById('gitops-repo-modal').classList.add('open');
+}
+function closeGitopsRepoModal() {
+    document.getElementById('gitops-repo-modal').classList.remove('open');
+}
+function onGrAuthTypeChange() {
+    const t = document.getElementById('gr-auth-type').value;
+    document.getElementById('gr-token-wrap').style.display = t === 'token' ? '' : 'none';
+}
+async function submitGitopsRepoForm() {
+    const errEl = document.getElementById('gr-form-error');
+    const name = document.getElementById('gr-name').value.trim();
+    const url  = document.getElementById('gr-url').value.trim();
+    if (!name || !url) { errEl.textContent = 'Name and URL are required.'; return; }
+    const body = {
+        name, url,
+        branch:      document.getElementById('gr-branch').value.trim() || 'main',
+        auth_type:   document.getElementById('gr-auth-type').value,
+        auth_token:  document.getElementById('gr-token').value.trim() || '',
+        description: document.getElementById('gr-desc').value.trim(),
+        workspace_id: cicdState.currentWsId || '',
+    };
+    const res = await fetch(`${API_BASE}/cicd/gitops/repos`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { errEl.textContent = await res.text(); return; }
+    closeGitopsRepoModal();
+    loadGitopsRepos();
+}
+
+// ── GitOps Deploy Modal ────────────────────────────────────
+function openDeployModal(repoId) {
+    document.getElementById('gd-name').value = '';
+    document.getElementById('gd-repo').value = repoId || '';
+    document.getElementById('gd-type').value = 'kubectl';
+    document.getElementById('gd-namespace').value = 'default';
+    document.getElementById('gd-manifest').value = '';
+    document.getElementById('gd-chart').value = '';
+    document.getElementById('gd-values').value = '';
+    document.getElementById('gd-context').value = '';
+    document.getElementById('gd-form-error').textContent = '';
+    onGdTypeChange();
+    // populate repo dropdown
+    const sel = document.getElementById('gd-repo');
+    sel.innerHTML = '<option value="">— None —</option>';
+    _gitopsRepos.forEach(r => {
+        const opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = r.name;
+        if (repoId && String(r.id) === String(repoId)) opt.selected = true;
+        sel.appendChild(opt);
+    });
+    document.getElementById('gitops-deploy-modal').classList.add('open');
+}
+function closeDeployModal() {
+    document.getElementById('gitops-deploy-modal').classList.remove('open');
+}
+function onGdTypeChange() {
+    const t = document.getElementById('gd-type').value;
+    document.getElementById('gd-kubectl-fields').style.display = t === 'kubectl' ? '' : 'none';
+    document.getElementById('gd-helm-fields').style.display   = t === 'helm'    ? '' : 'none';
+}
+async function submitDeployForm() {
+    const errEl = document.getElementById('gd-form-error');
+    const name = document.getElementById('gd-name').value.trim();
+    const deployType = document.getElementById('gd-type').value;
+    if (!name) { errEl.textContent = 'Name is required.'; return; }
+    const body = {
+        name,
+        deploy_type:     deployType,
+        namespace:       document.getElementById('gd-namespace').value.trim() || 'default',
+        manifest_path:   document.getElementById('gd-manifest').value.trim(),
+        chart_path:      document.getElementById('gd-chart').value.trim(),
+        values_override: document.getElementById('gd-values').value.trim(),
+        kube_context:    document.getElementById('gd-context').value.trim(),
+        workspace_id:    cicdState.currentWsId || '',
+    };
+    const repoId = parseInt(document.getElementById('gd-repo').value);
+    if (repoId) body.repo_id = repoId;
+    const res = await fetch(`${API_BASE}/cicd/gitops/deployments`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if (!res.ok) { errEl.textContent = await res.text(); return; }
+    closeDeployModal();
+    loadGitopsDeployments();
 }
 </script>
 </body>

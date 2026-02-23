@@ -319,6 +319,48 @@ func InitDB() error {
 		log.Printf("Warning: Failed to seed scan reports: %v", err)
 	}
 
+	// Create gitops_repos table
+	queryGitopsRepos := `
+	CREATE TABLE IF NOT EXISTS gitops_repos (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		url TEXT NOT NULL,
+		branch TEXT NOT NULL DEFAULT 'main',
+		auth_type TEXT DEFAULT 'none',
+		auth_token TEXT,
+		workspace_id TEXT,
+		description TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = DB.Exec(queryGitopsRepos); err != nil {
+		return err
+	}
+
+	// Create gitops_deployments table
+	queryGitopsDeployments := `
+	CREATE TABLE IF NOT EXISTS gitops_deployments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		repo_id INTEGER,
+		repo_name TEXT,
+		deploy_type TEXT NOT NULL DEFAULT 'helm',
+		namespace TEXT NOT NULL DEFAULT 'default',
+		chart_path TEXT,
+		values_override TEXT,
+		manifest_path TEXT,
+		kube_context TEXT,
+		status TEXT DEFAULT 'pending',
+		last_output TEXT,
+		workspace_id TEXT,
+		deployed_at DATETIME,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+	if _, err = DB.Exec(queryGitopsDeployments); err != nil {
+		return err
+	}
+
 	// Migrate: add 'view' role to users table CHECK constraint
 	// SQLite doesn't support modifying CHECK constraints, so we recreate the table
 	err = migrateUsersRoleConstraint()
