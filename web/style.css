@@ -608,10 +608,38 @@ body::before {
     border-color: rgba(96, 165, 250, 0.3);
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3), 0 0 15px rgba(59, 130, 246, 0.1);
     z-index: 10;
+    cursor: pointer;
 }
 
 .card:hover::before {
     opacity: 1;
+}
+
+/* Modal and Log Animations */
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
+
+.modal {
+    animation: modalFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.inspect-json {
+    background: #0f172a;
+    padding: var(--spacing-md);
+    border-radius: var(--radius-md);
+    overflow-y: auto !important;
+    max-height: 60vh;
+    border: 1px solid var(--border-hover);
+    scrollbar-width: thin;
+    scrollbar-color: var(--primary) transparent;
 }
 
 /* Card Entry Animation */

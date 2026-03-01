@@ -34,14 +34,34 @@ func getStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	containers, _ := cli.ContainerList(context.Background(), container.ListOptions{All: true})
-	images, _ := cli.ImageList(context.Background(), image.ListOptions{All: true})
-	info, _ := cli.Info(context.Background())
+	ctx := context.Background()
+	containers, _ := cli.ContainerList(ctx, container.ListOptions{All: true})
+	images, _ := cli.ImageList(ctx, image.ListOptions{All: true})
+	info, _ := cli.Info(ctx)
 
+	var totalCPU float64
+	var totalMem uint64
 	runningContainers := 0
+
 	for _, c := range containers {
 		if c.State == "running" {
 			runningContainers++
+			// Get stats for running containers
+			s, err := cli.ContainerStats(ctx, c.ID, false)
+			if err == nil {
+				var v container.StatsResponse
+				if err := json.NewDecoder(s.Body).Decode(&v); err == nil {
+					// CPU calculation (very simplified)
+					cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage) - float64(v.PreCPUStats.CPUUsage.TotalUsage)
+					systemDelta := float64(v.CPUStats.SystemUsage) - float64(v.PreCPUStats.SystemUsage)
+					if systemDelta > 0.0 && cpuDelta > 0.0 {
+						totalCPU += (cpuDelta / systemDelta) * float64(len(v.CPUStats.CPUUsage.PercpuUsage)) * 100.0
+					}
+					// Memory calculation
+					totalMem += v.MemoryStats.Usage
+				}
+				s.Body.Close()
+			}
 		}
 	}
 
@@ -52,6 +72,10 @@ func getStats(w http.ResponseWriter, r *http.Request) {
 			"stopped": len(containers) - runningContainers,
 		},
 		"images": len(images),
+		"usage": map[string]interface{}{
+			"cpu":    totalCPU,
+			"memory": totalMem,
+		},
 		"info": map[string]interface{}{
 			"serverVersion": info.ServerVersion,
 			"os":            info.OperatingSystem,

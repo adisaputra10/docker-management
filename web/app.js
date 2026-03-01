@@ -1,5 +1,8 @@
-
 const API_BASE = '/api';
+
+// Tracking for active details modal
+let activeContainerId = null;
+let activeContainerName = null;
 
 // ====================
 // FETCH INTERCEPTOR (For Multi-Host Support)
@@ -46,6 +49,18 @@ window.fetch = function (url, options) {
     });
 };
 
+function toggleRunningFilter() {
+    const checkbox = document.getElementById('running-filter-checkbox');
+    const dot = document.getElementById('filter-status-dot');
+    if (!checkbox || !dot) return;
+
+    checkbox.checked = !checkbox.checked;
+    dot.style.background = checkbox.checked ? '#22c55e' : '#94a3b8';
+
+    // Immediate refresh
+    refreshContainers(true);
+}
+
 // ====================
 // ROLE-BASED MENU FILTERING
 // ====================
@@ -57,10 +72,10 @@ function filterMenuByRole() {
 
     console.log('Filtering menu for roles:', roles);
 
-    const isAdmin   = roles.includes('admin');
+    const isAdmin = roles.includes('admin');
     const hasDocker = isAdmin || roles.some(r => r.startsWith('user_docker'));
-    const hasK8s    = isAdmin || roles.some(r => r.startsWith('user_k8s_'));
-    const hasCicd   = isAdmin || roles.some(r => r.startsWith('user_cicd_'));
+    const hasK8s = isAdmin || roles.some(r => r.startsWith('user_k8s_'));
+    const hasCicd = isAdmin || roles.some(r => r.startsWith('user_cicd_'));
 
     // CI/CD nav
     const cicdMenu = document.getElementById('nav-cicd');
@@ -118,7 +133,7 @@ function hideK0sAdminButtonsIfNeeded() {
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
     const roles = (userData.role || '').split(',').map(r => r.trim());
     const isAdmin = roles.includes('admin');
-    
+
     const adminButtonsDiv = document.getElementById('k0s-admin-buttons');
     if (adminButtonsDiv && !isAdmin) {
         adminButtonsDiv.style.display = 'none';
@@ -129,24 +144,24 @@ function hideDockerButtonsForK8sUsers() {
     const userData = JSON.parse(localStorage.getItem('userData') || '{}');
     const roles = (userData.role || 'user').split(',').map(r => r.trim());
     const isK8sViewOnly = roles.includes('user_k8s_view') && !roles.some(r => r === 'admin' || r === 'user_k8s_full');
-    
+
     if (isK8sViewOnly) {
         // For k8s_view role - hide only CREATE buttons (allow Prune and other actions)
         const createContainerBtns = document.querySelectorAll('[onclick="showCreateContainerModal()"]');
         createContainerBtns.forEach(btn => {
             btn.style.display = 'none';
         });
-        
+
         const createVolumeBtns = document.querySelectorAll('[onclick="showCreateVolumeModal()"]');
         createVolumeBtns.forEach(btn => {
             btn.style.display = 'none';
         });
-        
+
         const createNetworkBtns = document.querySelectorAll('[onclick="showCreateNetworkModal()"]');
         createNetworkBtns.forEach(btn => {
             btn.style.display = 'none';
         });
-        
+
         const createProjectBtns = document.querySelectorAll('[onclick="showCreateProjectModal()"]');
         createProjectBtns.forEach(btn => {
             btn.style.display = 'none';
@@ -331,15 +346,24 @@ document.addEventListener('DOMContentLoaded', () => {
     loadTabData('containers');
     fetchStats();
 
-    // Auto-refresh every 30 seconds
+    // Auto-refresh every 5 seconds (Synchronized with local state)
     setInterval(() => {
         fetchStats();
         const activeTab = document.querySelector('.nav-item.active');
         if (activeTab) {
             const tabName = activeTab.getAttribute('data-tab');
-            if (tabName) loadTabData(tabName);
+            if (tabName === 'containers') {
+                refreshContainers(true);
+            } else if (tabName) {
+                loadTabData(tabName);
+            }
         }
-    }, 30000);
+
+        // Also refresh open container details if any
+        if (activeContainerId) {
+            refreshActiveDetailView();
+        }
+    }, 5000);
 });
 
 function logout() {
@@ -374,7 +398,7 @@ function switchTab(event, tabName) {
         console.warn('Kubernetes users can only access K0s Cluster menu');
         return;
     }
-    
+
     if (isDockerOnly && tabName.includes('k0s')) {
         console.warn('Docker users cannot access Kubernetes menus');
         return;
@@ -459,46 +483,30 @@ function showToast(message, type = 'info') {
 // Fetch and Update Stats
 async function fetchStats() {
     try {
-        const [containersRes, imagesRes, volumesRes, networksRes] = await Promise.all([
-            fetch(`${API_BASE}/containers`),
-            fetch(`${API_BASE}/images`),
-            fetch(`${API_BASE}/volumes`),
-            fetch(`${API_BASE}/networks`)
-        ]);
+        const response = await fetch(`${API_BASE}/stats`);
+        const stats = await response.json();
 
-        const containers = (await containersRes.json()) || [];
-        const images = (await imagesRes.json()) || [];
-        const volumes = (await volumesRes.json()) || [];
-        const networks = (await networksRes.json()) || [];
+        const cpuEl = document.querySelector('#stat-cpu .stat-value');
+        if (cpuEl) cpuEl.textContent = `${stats.usage.cpu.toFixed(1)}%`;
 
-        const totalContainers = (containers && containers.length) || 0;
-        const runningContainers = (containers && containers.filter(c => c.state === 'running').length) || 0;
-        const totalImages = (images && images.length) || 0;
-        const totalVolumes = (volumes && volumes.length) || 0;
-        const totalNetworks = (networks && networks.length) || 0;
+        const memEl = document.querySelector('#stat-memory .stat-value');
+        if (memEl) {
+            const memMB = (stats.usage.memory / (1024 * 1024)).toFixed(0);
+            memEl.textContent = `${memMB} MB`;
+        }
 
-        // Update header stats
-        const totalContainerEl = document.querySelector('#totalContainers .stat-value');
-        if (totalContainerEl) totalContainerEl.textContent = totalContainers;
+        const runningEl = document.querySelector('#stat-running .stat-value');
+        if (runningEl) runningEl.textContent = stats.containers.running;
 
-        const runningContainerEl = document.querySelector('#runningContainers .stat-value');
-        if (runningContainerEl) runningContainerEl.textContent = runningContainers;
-
-        const totalImagesEl = document.querySelector('#totalImages .stat-value');
-        if (totalImagesEl) totalImagesEl.textContent = totalImages;
-
-        const totalVolumesEl = document.querySelector('#totalVolumes .stat-value');
-        if (totalVolumesEl) totalVolumesEl.textContent = totalVolumes;
-
-        const totalNetworksEl = document.querySelector('#totalNetworks .stat-value');
-        if (totalNetworksEl) totalNetworksEl.textContent = totalNetworks;
-
-        // Update sidebar
+        // Update sidebar badges
         updateSidebarBadges({
-            containers: { total: totalContainers, running: runningContainers },
-            images: totalImages,
-            volumes: totalVolumes,
-            networks: totalNetworks
+            containers: {
+                total: stats.containers.total,
+                running: stats.containers.running
+            },
+            images: stats.images,
+            volumes: stats.containers.total, // fallback or update if needed
+            networks: stats.containers.total // fallback or update if needed
         });
     } catch (error) {
         console.error('Error fetching stats:', error);
@@ -506,10 +514,14 @@ async function fetchStats() {
 }
 
 // Containers
-async function refreshContainers() {
+let lastContainersData = '';
+async function refreshContainers(silent = false) {
     const containersList = document.getElementById('containers-list');
     if (!containersList) return;
-    containersList.innerHTML = '<div class="loading">Loading containers...</div>';
+
+    if (!silent && !containersList.children.length) {
+        containersList.innerHTML = '<div class="loading">Loading containers...</div>';
+    }
 
     try {
         const response = await fetch(`${API_BASE}/containers`);
@@ -520,8 +532,29 @@ async function refreshContainers() {
             return;
         }
 
-        containersList.innerHTML = containers.map(container => `
-            <div class="card">
+        // Sort: running containers first, then by name
+        containers.sort((a, b) => {
+            if (a.state === 'running' && b.state !== 'running') return -1;
+            if (a.state !== 'running' && b.state === 'running') return 1;
+            return a.name.localeCompare(b.name);
+        });
+
+        // Filter: Running Only toggle
+        const showOnlyRunning = document.getElementById('running-filter-checkbox')?.checked || false;
+
+        const currentData = JSON.stringify(containers.map(c => ({ id: c.id, state: c.state }))) + '|filter:' + showOnlyRunning;
+        if (currentData === lastContainersData && containersList.children.length > 0) {
+            fetchStats();
+            return;
+        }
+        lastContainersData = currentData;
+
+        const filteredContainers = showOnlyRunning
+            ? containers.filter(c => c.state === 'running')
+            : containers;
+
+        const html = filteredContainers.map(container => `
+            <div class="card" data-id="${container.id}" onclick="viewContainerDetails('${container.id}', '${container.name}')" style="animation: cardEntry 0.4s ease forwards;">
                 <div class="card-header">
                     <div class="card-title" title="${container.name}">${container.name || container.id.substring(0, 12)}</div>
                     <div class="card-status ${container.state === 'running' ? 'running' : 'stopped'}">
@@ -552,50 +585,46 @@ async function refreshContainers() {
 
                 <div class="card-actions" style="margin-top: auto; display: flex; gap: 0.5rem; flex-wrap: wrap;">
                     ${container.state === 'running' ? `
-                        <button class="btn btn-primary" onclick="execContainer('${container.id}', '${container.name}')" style="flex: 1">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="4 17 10 11 4 5"/>
-                                <line x1="12" y1="19" x2="20" y2="19"/>
-                            </svg>
-                            Exec
-                        </button>
-                        <button class="btn btn-warning" onclick="stopContainer('${container.id}')" title="Stop">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
+                        <button class="btn btn-warning" onclick="event.stopPropagation(); stopContainer('${container.id}', '${container.name}')" style="flex: 1">
+                            <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; margin-right: 4px;">
                                 <rect x="6" y="6" width="12" height="12"/>
                             </svg>
-                        </button>
-                        <button class="btn btn-secondary" onclick="restartContainer('${container.id}')" title="Restart">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-                            </svg>
+                            Stop
                         </button>
                     ` : `
-                        <button class="btn btn-success" onclick="startContainer('${container.id}')" style="flex: 1">
-                            <svg viewBox="0 0 24 24" fill="currentColor">
+                        <button class="btn btn-success" onclick="event.stopPropagation(); startContainer('${container.id}', '${container.name}')" style="flex: 1">
+                            <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; margin-right: 4px;">
                                 <polygon points="5 3 19 12 5 21 5 3"/>
                             </svg>
                             Start
                         </button>
                     `}
-                    <button class="btn btn-danger" onclick="removeContainer('${container.id}')" title="Remove">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <polyline points="3 6 5 6 21 6"/>
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                        </svg>
-                    </button>
                 </div>
             </div>
         `).join('');
 
+        // Use a slight fade out/in effect if updating
+        if (containersList.innerHTML !== '') {
+            containersList.style.opacity = '0.8';
+            setTimeout(() => {
+                containersList.innerHTML = html;
+                containersList.style.opacity = '1';
+            }, 50);
+        } else {
+            containersList.innerHTML = html;
+        }
+
         fetchStats();
     } catch (error) {
-        containersList.innerHTML = '<div class="loading">Failed to load containers</div>';
-        showToast('Failed to load containers', 'error');
+        if (!silent) {
+            containersList.innerHTML = '<div class="loading">Failed to load containers</div>';
+            showToast('Failed to load containers', 'error');
+        }
         console.error('Error fetching containers:', error);
     }
 }
 
-async function startContainer(id) {
+async function startContainer(id, name) {
     try {
         const response = await fetch(`${API_BASE}/containers/${id}/start`, {
             method: 'POST'
@@ -603,7 +632,8 @@ async function startContainer(id) {
 
         if (response.ok) {
             showToast('Container started successfully', 'success');
-            refreshContainers();
+            refreshContainers(true);
+            if (name) viewContainerDetails(id, name);
         } else {
             showToast('Failed to start container', 'error');
         }
@@ -613,7 +643,7 @@ async function startContainer(id) {
     }
 }
 
-async function stopContainer(id) {
+async function stopContainer(id, name) {
     try {
         const response = await fetch(`${API_BASE}/containers/${id}/stop`, {
             method: 'POST'
@@ -621,7 +651,8 @@ async function stopContainer(id) {
 
         if (response.ok) {
             showToast('Container stopped successfully', 'success');
-            refreshContainers();
+            refreshContainers(true);
+            if (name) viewContainerDetails(id, name);
         } else {
             showToast('Failed to stop container', 'error');
         }
@@ -631,7 +662,7 @@ async function stopContainer(id) {
     }
 }
 
-async function restartContainer(id) {
+async function restartContainer(id, name) {
     try {
         const response = await fetch(`${API_BASE}/containers/${id}/restart`, {
             method: 'POST'
@@ -639,7 +670,8 @@ async function restartContainer(id) {
 
         if (response.ok) {
             showToast('Container restarted successfully', 'success');
-            refreshContainers();
+            refreshContainers(true);
+            if (name) viewContainerDetails(id, name);
         } else {
             showToast('Failed to restart container', 'error');
         }
@@ -675,6 +707,170 @@ async function removeContainer(id) {
 function execContainer(id, name) {
     // Navigate to terminal page with container ID and name
     window.location.href = `/terminal.html?id=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}`;
+}
+
+// View container details modal
+async function viewContainerDetails(id, name) {
+    activeContainerId = id;
+    activeContainerName = name;
+    showModal(`Container Details: ${name}`, '<div class="loading">Fetching details...</div>');
+
+    try {
+        const response = await fetch(`${API_BASE}/containers/${id}/inspect`);
+        const info = await response.json();
+
+        const state = info.State || {};
+        const config = info.Config || {};
+        const networkSettings = info.NetworkSettings || {};
+
+        const statusClass = state.Running ? 'running' : 'stopped';
+        const statusText = state.Status || (state.Running ? 'running' : 'exited');
+
+        let portsHtml = '-';
+        if (networkSettings.Ports) {
+            portsHtml = Object.entries(networkSettings.Ports)
+                .map(([containerPort, hostPorts]) => {
+                    if (!hostPorts) return containerPort;
+                    return hostPorts.map(hp => `<a href="http://localhost:${hp.HostPort}" target="_blank" rel="noopener noreferrer" class="port-link">${hp.HostPort}</a>->${containerPort}`).join(', ');
+                }).join('<br>');
+        }
+
+        const content = `
+            <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                <!-- Header Info -->
+                <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 0.75rem; border: 1px solid var(--border);">
+                    <div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Status</div>
+                        <div class="card-status ${statusClass}" style="display: inline-block;">${statusText}</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Image</div>
+                        <div style="font-weight: 600; color: var(--primary-light);">${config.Image}</div>
+                    </div>
+                </div>
+
+                <!-- Detail Grid -->
+                <div class="detail-grid" style="grid-template-columns: 1fr 1fr; gap: 1rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 0.75rem;">
+                    <div>
+                        <div class="detail-label">Container ID</div>
+                        <div class="detail-value" style="font-family: monospace;">${id}</div>
+                    </div>
+                    <div>
+                        <div class="detail-label">Created</div>
+                        <div class="detail-value">${new Date(info.Created).toLocaleString()}</div>
+                    </div>
+                    <div>
+                        <div class="detail-label">IP Address</div>
+                        <div class="detail-value">${networkSettings.IPAddress || 'None'}</div>
+                    </div>
+                    <div>
+                        <div class="detail-label">Ports</div>
+                        <div class="detail-value">${portsHtml}</div>
+                    </div>
+                </div>
+
+                <!-- Action Options -->
+                <div>
+                    <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Actions & Tools</div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;">
+                        <button class="btn btn-primary" onclick="closeModal(); viewLogs('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                            View Logs
+                        </button>
+                        <button class="btn btn-secondary" onclick="closeModal(); execContainer('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                            Terminal
+                        </button>
+                        ${state.Running ? `
+                            <button class="btn btn-warning" onclick="stopContainer('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="currentColor" style="width:18px; margin-right:8px;"><rect x="6" y="6" width="12" height="12"/></svg>
+                                Stop
+                            </button>
+                            <button class="btn btn-primary" onclick="restartContainer('${id}', '${name}')" style="justify-content: center; padding: 0.75rem; background: var(--warning); border-color: var(--warning); color: #000;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                Restart
+                            </button>
+                        ` : `
+                            <button class="btn btn-success" onclick="startContainer('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="currentColor" style="width:18px; margin-right:8px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                Start
+                            </button>
+                        `}
+                        <button class="btn btn-secondary" onclick="closeModal(); inspectContainer('${id}')" style="justify-content: center; padding: 0.75rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            Raw JSON
+                        </button>
+                        <button class="btn btn-danger" onclick="removeContainer('${id}')" style="justify-content: center; padding: 0.75rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        showModal(`Container: ${name}`, content);
+    } catch (error) {
+        showModal(`Error`, `<div class="error">Failed to fetch container details: ${error.message}</div>`);
+    }
+}
+
+// View container logs
+async function viewLogs(id, name) {
+    showModal(`Logs: ${name}`, '<div class="loading">Fetching logs...</div>');
+
+    try {
+        const response = await fetch(`${API_BASE}/containers/${id}/logs?tail=2000`);
+        const logs = await response.text();
+
+        const content = `
+            <div class="inspect-json" id="logs-view" style="max-height: 65vh; overflow-y: auto; white-space: pre-wrap; font-family: 'JetBrains Mono', 'Fira Code', monospace; line-height: 1.4;">${logs || 'No logs available.'}</div>
+            <div class="modal-actions">
+                <button class="btn btn-primary" onclick="viewLogs('${id}', '${name}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; margin-right:4px;">
+                        <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"></path>
+                    </svg>
+                    Refresh
+                </button>
+                <button class="btn btn-success" onclick="downloadLogs('${id}', '${name}')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px; margin-right:4px;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"></path>
+                    </svg>
+                    Download
+                </button>
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+            </div>
+        `;
+        showModal(`Logs: ${name}`, content);
+
+        // Scroll to bottom
+        setTimeout(() => {
+            const logsView = document.getElementById('logs-view');
+            if (logsView) logsView.scrollTop = logsView.scrollHeight;
+        }, 100);
+    } catch (error) {
+        showModal(`Logs: ${name}`, `<div class="error">Failed to fetch logs: ${error.message}</div>`);
+    }
+}
+
+async function downloadLogs(id, name) {
+    try {
+        showToast('Preparing download...', 'info');
+        const response = await fetch(`${API_BASE}/containers/${id}/logs?tail=5000`);
+        const logs = await response.text();
+
+        const blob = new Blob([logs], { type: 'text/plain' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `container-${name}-${new Date().toISOString().split('T')[0]}.log`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        showToast('Download started', 'success');
+    } catch (error) {
+        showToast('Download failed: ' + error.message, 'error');
+    }
 }
 
 // Images
@@ -1043,5 +1239,118 @@ function updateSidebarBadges(stats) {
 
         if (running) running.textContent = stats.containers.running || 0;
         if (stopped) stopped.textContent = (stats.containers.total - stats.containers.running) || 0;
+    }
+}
+
+// Background refresh for active detail view
+async function refreshActiveDetailView() {
+    if (!activeContainerId) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/containers/${activeContainerId}/inspect`);
+        if (!response.ok) return;
+
+        const info = await response.json();
+        const state = info.State || {};
+        const statusText = state.Status || (state.Running ? 'running' : 'exited');
+
+        // Find status badge in modal and update if changed
+        const modalBody = document.getElementById('modal-body');
+        if (!modalBody) return;
+
+        const badge = modalBody.querySelector('.card-status');
+        if (badge && badge.textContent !== statusText) {
+            console.log(`Auto-refreshing modal for ${activeContainerName} (State: ${statusText})`);
+            // Full re-render of modal content to update buttons and info
+            const config = info.Config || {};
+            const networkSettings = info.NetworkSettings || {};
+            const statusClass = state.Running ? 'running' : 'stopped';
+
+            let portsHtml = '-';
+            if (networkSettings.Ports) {
+                portsHtml = Object.entries(networkSettings.Ports)
+                    .map(([containerPort, hostPorts]) => {
+                        if (!hostPorts) return containerPort;
+                        return hostPorts.map(hp => `<a href="http://localhost:${hp.HostPort}" target="_blank" rel="noopener noreferrer" class="port-link">${hp.HostPort}</a>->${containerPort}`).join(', ');
+                    }).join('<br>');
+            }
+
+            const content = `
+                <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                    <!-- Header Info -->
+                    <div style="display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 0.75rem; border: 1px solid var(--border);">
+                        <div>
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Status</div>
+                            <div class="card-status ${statusClass}" style="display: inline-block;">${statusText}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">Image</div>
+                            <div style="font-weight: 600; color: var(--primary-light);">${config.Image}</div>
+                        </div>
+                    </div>
+
+                    <!-- Detail Grid -->
+                    <div class="detail-grid" style="grid-template-columns: 1fr 1fr; gap: 1rem; background: rgba(0,0,0,0.2); padding: 1rem; border-radius: 0.75rem;">
+                        <div>
+                            <div class="detail-label">Container ID</div>
+                            <div class="detail-value" style="font-family: monospace;">${activeContainerId}</div>
+                        </div>
+                        <div>
+                            <div class="detail-label">Created</div>
+                            <div class="detail-value">${new Date(info.Created).toLocaleString()}</div>
+                        </div>
+                        <div>
+                            <div class="detail-label">IP Address</div>
+                            <div class="detail-value">${networkSettings.IPAddress || 'None'}</div>
+                        </div>
+                        <div>
+                            <div class="detail-label">Ports</div>
+                            <div class="detail-value">${portsHtml}</div>
+                        </div>
+                    </div>
+
+                    <!-- Action Options -->
+                    <div>
+                        <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Actions & Tools</div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;">
+                            <button class="btn btn-primary" onclick="closeModal(); viewLogs('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                View Logs
+                            </button>
+                            <button class="btn btn-secondary" onclick="closeModal(); execContainer('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                                Terminal
+                            </button>
+                            ${state.Running ? `
+                                <button class="btn btn-warning" onclick="stopContainer('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
+                                    <svg viewBox="0 0 24 24" fill="currentColor" style="width:18px; margin-right:8px;"><rect x="6" y="6" width="12" height="12"/></svg>
+                                    Stop
+                                </button>
+                                <button class="btn btn-primary" onclick="restartContainer('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem; background: var(--warning); border-color: var(--warning); color: #000;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                                    Restart
+                                </button>
+                            ` : `
+                                <button class="btn btn-success" onclick="startContainer('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
+                                    <svg viewBox="0 0 24 24" fill="currentColor" style="width:18px; margin-right:8px;"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                    Start
+                                </button>
+                            `}
+                            <button class="btn btn-secondary" onclick="closeModal(); inspectContainer('${activeContainerId}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                                Raw JSON
+                            </button>
+                            <button class="btn btn-danger" onclick="removeContainer('${activeContainerId}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            modalBody.innerHTML = content;
+        }
+    } catch (error) {
+        console.error('Error auto-refreshing detail view:', error);
     }
 }

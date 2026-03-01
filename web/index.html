@@ -117,17 +117,17 @@
                 <a href="#" class="nav-item" data-tab="k0s" onclick="switchTab(event, 'k0s')">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10" />
-                        <path d="M12 2v20M2 12h20M7 7h10M7 17h10"/>
+                        <path d="M12 2v20M2 12h20M7 7h10M7 17h10" />
                     </svg>
                     <span class="nav-text">K0s Clusters</span>
                     <span class="nav-badge" id="nav-k0s-count">0</span>
                 </a>
                 <a href="cicd.html" class="nav-item" id="nav-cicd" data-tab="cicd">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <polyline points="16 3 21 3 21 8"/>
-                        <line x1="4" y1="20" x2="21" y2="3"/>
-                        <polyline points="21 16 21 21 16 21"/>
-                        <line x1="15" y1="15" x2="21" y2="21"/>
+                        <polyline points="16 3 21 3 21 8" />
+                        <line x1="4" y1="20" x2="21" y2="3" />
+                        <polyline points="21 16 21 21 16 21" />
+                        <line x1="15" y1="15" x2="21" y2="21" />
                     </svg>
                     <span class="nav-text">CI/CD</span>
                 </a>
@@ -191,24 +191,16 @@
                     </div>
 
                     <div class="header-stats">
-                        <div class="stat-badge" id="totalContainers">
-                            <span class="stat-label">Containers</span>
-                            <span class="stat-value">0</span>
+                        <div class="stat-badge" id="stat-cpu">
+                            <span class="stat-label">CPU Usage</span>
+                            <span class="stat-value">0%</span>
                         </div>
-                        <div class="stat-badge running" id="runningContainers">
+                        <div class="stat-badge" id="stat-memory">
+                            <span class="stat-label">Memory</span>
+                            <span class="stat-value">0 MB</span>
+                        </div>
+                        <div class="stat-badge running" id="stat-running">
                             <span class="stat-label">Running</span>
-                            <span class="stat-value">0</span>
-                        </div>
-                        <div class="stat-badge" id="totalImages">
-                            <span class="stat-label">Images</span>
-                            <span class="stat-value">0</span>
-                        </div>
-                        <div class="stat-badge" id="totalVolumes">
-                            <span class="stat-label">Volumes</span>
-                            <span class="stat-value">0</span>
-                        </div>
-                        <div class="stat-badge" id="totalNetworks">
-                            <span class="stat-label">Networks</span>
                             <span class="stat-value">0</span>
                         </div>
                     </div>
@@ -234,6 +226,16 @@
                                     </svg>
                                     Create Container
                                 </button>
+                                <div class="filter-toggle"
+                                    style="display: flex; align-items: center; background: rgba(255,255,255,0.05); padding: 0.25rem 0.75rem; border-radius: 2rem; border: 1px solid var(--border); gap: 0.5rem; user-select: none; cursor: pointer;"
+                                    onclick="toggleRunningFilter()">
+                                    <div id="filter-status-dot" class="stat-dot"
+                                        style="background: #94a3b8; width: 8px; height: 8px;"></div>
+                                    <span
+                                        style="font-size: 0.8rem; font-weight: 500; color: var(--text-secondary);">Running
+                                        Only</span>
+                                    <input type="checkbox" id="running-filter-checkbox" style="display: none;">
+                                </div>
                                 <button class="btn btn-warning" onclick="pruneContainers()">
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                         <path
@@ -486,8 +488,10 @@
                                     </svg>
                                     Create Cluster
                                 </button>
-                                <button class="btn" onclick="showImportK0sModal()" style="background: #6366f1; color: white; border: 1px solid #6366f1;">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px;">
+                                <button class="btn" onclick="showImportK0sModal()"
+                                    style="background: #6366f1; color: white; border: 1px solid #6366f1;">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        style="width: 18px; height: 18px;">
                                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                                         <polyline points="7 10 12 15 17 10"></polyline>
                                         <line x1="12" y1="15" x2="12" y2="3"></line>
@@ -498,7 +502,9 @@
                         </div>
 
                         <!-- K0s Details Section (Hidden by default) -->
-                        <div id="k0s-details-section" style="display: none; margin-bottom: 2rem; background: var(--section-bg, rgba(255,255,255,0.02)); border: 1px solid var(--border, rgba(255,255,255,0.1)); border-radius: var(--radius-lg, 0.75rem);"></div>
+                        <div id="k0s-details-section"
+                            style="display: none; margin-bottom: 2rem; background: var(--section-bg, rgba(255,255,255,0.02)); border: 1px solid var(--border, rgba(255,255,255,0.1)); border-radius: var(--radius-lg, 0.75rem);">
+                        </div>
 
                         <div id="k0s-clusters-container">
                             <div class="loading">Loading clusters...</div>

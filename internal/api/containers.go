@@ -2,6 +2,7 @@
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -444,6 +445,61 @@ func GetHostContainers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(containers)
+}
+
+// Get Container Logs
+func getContainerLogs(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	tailLines := r.URL.Query().Get("tail")
+	if tailLines == "" {
+		tailLines = "100" // Default to last 100 lines
+	}
+
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       tailLines,
+		Timestamps: true,
+	}
+
+	body, err := cli.ContainerLogs(context.Background(), id, options)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer body.Close()
+
+	// Body contains the multiplexed stream (8-byte header: [1]byte{type}, [3]byte{0}, [4]byte{size})
+	// if the container was not started with a TTY.
+	// We'll use a simple approach to strip these headers for cleaner display.
+	var result strings.Builder
+	header := make([]byte, 8)
+	for {
+		_, err := body.Read(header)
+		if err != nil {
+			break // EOF or error
+		}
+		
+		// The last 4 bytes are the size of the payload (big-endian)
+		count := binary.BigEndian.Uint32(header[4:])
+		payload := make([]byte, count)
+		_, err = body.Read(payload)
+		if err != nil {
+			break
+		}
+		result.Write(payload)
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(result.String()))
 }
 
 

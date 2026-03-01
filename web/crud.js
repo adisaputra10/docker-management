@@ -19,6 +19,12 @@ function showModal(title, content) {
 function closeModal() {
     const overlay = document.getElementById('modal-overlay');
     overlay.classList.remove('active');
+
+    // Clear tracking in app.js if present
+    if (typeof activeContainerId !== 'undefined') {
+        activeContainerId = null;
+        activeContainerName = null;
+    }
 }
 
 // ===================
