@@ -25,20 +25,11 @@ FROM alpine:3.21
 # Install runtime dependencies (sqlite needs some libs if CGO is used)
 RUN apk add --no-cache ca-certificates tzdata
 
-# Create a non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
-
 # Set working directory
 WORKDIR /app
 
 # Copy the binary from the builder stage
 COPY --from=builder /app/docker-management .
-
-# Ensure the appuser has permissions to the /app directory
-RUN chown -R appuser:appgroup /app
-
-# Switch to non-root user
-USER appuser
 
 # Expose the application port
 EXPOSE 8080
