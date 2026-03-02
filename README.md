@@ -2,27 +2,50 @@
 
 **Docker Manager** adalah aplikasi web modern dan ringan untuk mengelola container Docker Anda dengan mudah. Dibangun dengan backend Go (Golang) yang cepat dan frontend Vanilla JS yang responsif, aplikasi ini menawarkan pengalaman manajemen Docker yang intuitif tanpa bloatware.
 
-![Docker Dashboard](web/image1.png)
+![Docker Dashboard](web/screenshots/dashboard.png)
 
 ## ✨ Fitur Utama
 
 ### 🖥️ Dashboard Futuristik
 - **Glassmorphism UI:** Tampilan modern dengan efek transparansi dan animasi halus.
 - **Real-time Monitoring:** Pantau status container (Running/Stopped), jumlah image, volume, dan network secara instan.
-- **Responsive Grid:** Informasi penting (ID, Image, Port, Created) ditampilkan dengan rapi.
+- **Minimal List View:** Informasi ditampilkan rapi dalam row-based layout yang bersih, terinspirasi dari Activity Logs.
+
+### 🚀 Deployment Templates (NEW ✨)
+- **17 Template Siap Pakai:** Langsung deploy service populer tanpa konfigurasi manual.
+- **Auto-fill Form:** Pilih template, semua field (image, port, env vars, restart policy) terisi otomatis.
+- **Auto Image Pull:** Image otomatis di-pull dari Docker Hub jika belum ada secara lokal.
+- **Auto Start:** Container langsung running setelah dibuat — tidak perlu klik Start manual.
+- **Error Detail Modal:** Jika deploy gagal (misal: port sudah dipakai), error Docker lengkap ditampilkan dalam modal informatif.
+
+**Template tersedia:**
+| Kategori | Template |
+|---|---|
+| 🌐 Web Server | Nginx, Apache HTTP |
+| 🔁 Proxy | Traefik |
+| 📝 CMS | WordPress |
+| 🗄️ Database | MySQL 8, MariaDB, PostgreSQL, Redis, MongoDB |
+| ⚙️ DevOps | Portainer, pgAdmin 4 |
+| 📊 Monitoring | Grafana, Prometheus |
+| 💬 Messaging | RabbitMQ |
+| 📦 Storage | MinIO |
+| 🔍 Search | Elasticsearch |
+
+![Deploy Templates](web/screenshots/deploy-templates.png)
 
 ### 🚀 Manajemen Container Lengkap
 - **Kontrol Penuh:** Start, Stop, Restart, dan Kill container dengan satu klik.
 - **Quick Exec:** Eksekusi perintah langsung ke dalam container tanpa membuka terminal terpisah.
 - **Log Viewer:** Lihat log aktivitas container secara real-time.
+- **Error Details:** Error saat Start/Restart ditampilkan dengan lengkap, bukan hanya notifikasi singkat.
 - **Batch Actions:** Prune container yang tidak digunakan dengan cepat.
+
+![Container Detail](web/screenshots/container-detail.png)
 
 ### 💻 Terminal Web Canggih
 - **Full Screen Mode:** Terminal xterm.js yang terintegrasi penuh, memberikan pengalaman seperti terminal native di browser.
 - **WebSocket Connection:** Koneksi real-time yang stabil dan responsif.
 - **Fitur Lengkap:** Mendukung copy-paste, command history, dan resizing otomatis.
-
-![Terminal View](web/image2.png)
 
 ### 🌍 Multi-Host Support
 - **Kelola Banyak Server:** Hubungkan dan kelola multiple Docker Hosts (Local & Remote VM/VPS) dari satu dashboard.
@@ -47,6 +70,7 @@
 
 ### 🚀 CI/CD Pipeline Management
 ![CI/CD Dashboard](web/cicd.png)
+
 
 Kelola end-to-end CI/CD pipeline dengan dashboard yang intuitif:
 - **Pipeline Creation:** Buat pipeline dengan repository, branch, build command, dan deploy command.

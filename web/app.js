@@ -631,17 +631,37 @@ async function startContainer(id, name) {
         });
 
         if (response.ok) {
-            showToast('Container started successfully', 'success');
+            showToast(`✅ Container "${name}" started`, 'success');
             refreshContainers(true);
             if (name) viewContainerDetails(id, name);
         } else {
-            showToast('Failed to start container', 'error');
+            const errorText = await response.text();
+            showModal('⚠️ Failed to Start Container', `
+                <div style="margin-bottom: 1rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;">
+                        <span style="font-size: 1.1rem;">📦</span>
+                        <div style="font-weight: 600;">${name || id}</div>
+                        <span style="margin-left: auto; background: rgba(239,68,68,0.15); color: #f87171; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; text-transform: uppercase; border: 1px solid rgba(239,68,68,0.3);">FAILED</span>
+                    </div>
+                    <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 0.5rem; padding: 0.875rem; margin-bottom: 0.75rem;">
+                        <div style="font-size: 0.72rem; font-weight: 700; color: #f87171; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">📛 Error Details</div>
+                        <code style="font-size: 0.78rem; color: #fca5a5; line-height: 1.6; display: block; word-break: break-all; white-space: pre-wrap;">${errorText.trim()}</code>
+                    </div>
+                    <div style="background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 0.5rem; padding: 0.75rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">
+                        💡 <strong>Common causes:</strong> Port already in use on the host, missing required environment variables, or volume mount issues. Adjust the container config and try again.
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                </div>
+            `);
         }
     } catch (error) {
         showToast('Error starting container', 'error');
         console.error('Error starting container:', error);
     }
 }
+
 
 async function stopContainer(id, name) {
     try {
@@ -669,17 +689,29 @@ async function restartContainer(id, name) {
         });
 
         if (response.ok) {
-            showToast('Container restarted successfully', 'success');
+            showToast(`✅ Container "${name}" restarted`, 'success');
             refreshContainers(true);
             if (name) viewContainerDetails(id, name);
         } else {
-            showToast('Failed to restart container', 'error');
+            const errorText = await response.text();
+            showModal('⚠️ Failed to Restart Container', `
+                <div style="margin-bottom: 1rem;">
+                    <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 0.5rem; padding: 0.875rem; margin-bottom: 0.75rem;">
+                        <div style="font-size: 0.72rem; font-weight: 700; color: #f87171; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">📛 Error Details</div>
+                        <code style="font-size: 0.78rem; color: #fca5a5; line-height: 1.6; display: block; word-break: break-all; white-space: pre-wrap;">${errorText.trim()}</code>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                </div>
+            `);
         }
     } catch (error) {
         showToast('Error restarting container', 'error');
         console.error('Error restarting container:', error);
     }
 }
+
 
 async function removeContainer(id) {
     if (!confirm('Are you sure you want to remove this container?')) {
@@ -877,7 +909,11 @@ async function downloadLogs(id, name) {
 async function refreshImages() {
     const imagesList = document.getElementById('images-list');
     if (!imagesList) return;
-    imagesList.innerHTML = '<div class="loading">Loading images...</div>';
+
+    // Only show loading if empty (silent refresh)
+    if (imagesList.innerHTML === '' || imagesList.querySelector('.loading')) {
+        imagesList.innerHTML = '<div class="loading">Loading images...</div>';
+    }
 
     try {
         const response = await fetch(`${API_BASE}/images`);
@@ -888,35 +924,58 @@ async function refreshImages() {
             return;
         }
 
-        imagesList.innerHTML = `
-            <table class="table">
+        const tableHTML = `
+            <table class="table fixed">
                 <thead>
                     <tr>
-                        <th>Repository</th>
-                        <th>Tag</th>
-                        <th>ID</th>
-                        <th>Size</th>
-                        <th>Created</th>
-                        <th>Actions</th>
+                        <th style="width: 40px;"></th>
+                        <th style="width: 35%;">Name</th>
+                        <th style="width: 10%;">Tag</th>
+                        <th style="width: 120px;">Image ID</th>
+                        <th style="width: 15%;">Created</th>
+                        <th style="width: 100px;">Size</th>
+                        <th style="width: 100px; text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${images.map(image => `
-                        <tr>
-                            <td>${image.repository}</td>
-                            <td>${image.tag}</td>
-                            <td>${image.id}</td>
-                            <td>${formatBytes(image.size)}</td>
-                            <td>${formatDate(image.created)}</td>
-                            <td>
-                                <button class="btn btn-sm btn-primary" onclick="inspectImage('${image.id}')">Inspect</button>
-                                <button class="btn btn-sm btn-danger" onclick="removeImage('${image.id}', '${image.repository}:${image.tag}')">Delete</button>
-                            </td>
-                        </tr>
-                    `).join('')}
+                    ${images.map(image => {
+            const isAMD64 = image.repository && image.repository.includes('node') && image.tag === '22-alpine'; // Example logic based on SS
+            const statusDot = image.repository === 'sql-editor-app' || image.repository === 'mysql' || image.repository === 'docker-management'
+                ? '<span class="status-dot solid"></span>'
+                : '<span class="status-dot hollow"></span>';
+
+            return `
+                            <tr>
+                                <td>${statusDot}</td>
+                                <td style="font-weight: 500;">
+                                    <span class="text-truncate" title="${image.repository}">${image.repository}</span>
+                                    ${isAMD64 ? '<span class="badge-amd64"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> AMD64</span>' : ''}
+                                </td>
+                                <td class="text-secondary"><span class="text-truncate">${image.tag}</span></td>
+                                <td class="text-secondary"><code>${image.id.replace('sha256:', '').substring(0, 10)}</code></td>
+                                <td class="text-secondary">${formatDate(image.created)}</td>
+                                <td>${formatBytes(image.size)}</td>
+                                <td style="text-align: right;">
+                                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                        <button class="btn btn-icon-tiny" onclick="inspectImage('${image.id}')" title="Inspect">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                                        </button>
+                                        <button class="btn btn-icon-tiny" style="color: #ef4444;" onclick="removeImage('${image.id}', '${image.repository}:${image.tag}')" title="Delete">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        `;
+        }).join('')}
                 </tbody>
             </table>
         `;
+
+        // Update only if changed to avoid unnecessary DOM thrashing (simple check)
+        if (imagesList.innerHTML !== tableHTML) {
+            imagesList.innerHTML = tableHTML;
+        }
 
         fetchStats();
     } catch (error) {

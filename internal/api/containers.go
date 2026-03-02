@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/adisaputra10/docker-management/internal/models"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
 	"github.com/gorilla/mux"
@@ -216,9 +218,26 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-pull image if not present locally
+	ctx := context.Background()
+	_, _, inspectErr := cli.ImageInspectWithRaw(ctx, req.Image)
+	if inspectErr != nil {
+		// Image not found locally, pull it
+		pullReader, pullErr := cli.ImagePull(ctx, req.Image, image.PullOptions{})
+		if pullErr != nil {
+			http.Error(w, "Failed to pull image '"+req.Image+"': "+pullErr.Error(), http.StatusInternalServerError)
+			database.LogActivity("pull_image", req.Image, "error")
+			return
+		}
+		// Drain the reader to complete the pull
+		io.Copy(io.Discard, pullReader)
+		pullReader.Close()
+		database.LogActivity("pull_image", req.Image, "success")
+	}
+
 	// Create container
 	resp, err := cli.ContainerCreate(
-		context.Background(),
+		ctx,
 		config,
 		hostConfig,
 		networkConfig,
@@ -232,6 +251,20 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Start the container after creation
+	startErr := cli.ContainerStart(ctx, resp.ID, container.StartOptions{})
+	if startErr != nil {
+		// Container was created but failed to start; still report success with a warning
+		database.LogActivity("create_container", req.Name, "success")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":  true,
+			"id":       resp.ID,
+			"warnings": append(resp.Warnings, "Container created but failed to start: "+startErr.Error()),
+		})
+		return
+	}
+
 	database.LogActivity("create_container", req.Name, "success")
 
 	w.Header().Set("Content-Type", "application/json")
@@ -241,6 +274,7 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 		"warnings": resp.Warnings,
 	})
 }
+
 
 // Rename container
 func renameContainer(w http.ResponseWriter, r *http.Request) {

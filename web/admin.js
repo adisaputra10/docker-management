@@ -11,7 +11,7 @@ async function loadUsers() {
         console.error('users-list element not found');
         return;
     }
-    list.innerHTML = '<div class="loading">Loading...</div>';
+    list.innerHTML = '<div class="loading">Loading users...</div>';
 
     try {
         const res = await fetch(`${API_BASE}/users`);
@@ -21,7 +21,7 @@ async function loadUsers() {
         const users = await res.json();
 
         if (!users || users.length === 0) {
-            list.innerHTML = '<div style="padding: 1rem; color: #94a3b8;">No users found</div>';
+            list.innerHTML = '<div class="empty-state">No users found</div>';
             return;
         }
 
@@ -37,66 +37,47 @@ async function loadUsers() {
 
         function roleBadges(roleStr) {
             return (roleStr || '').split(',').map(r => r.trim()).filter(Boolean).map(r =>
-                `<span class="card-status ${r === 'admin' ? 'running' : 'stopped'}" style="width:fit-content;font-size:0.72rem;padding:0.15rem 0.5rem;">${roleIcons[r] || r}</span>`
+                `<span class="card-status ${r === 'admin' ? 'running' : 'stopped'}" style="width:fit-content;font-size:0.72rem;padding:0.15rem 0.5rem; margin-bottom: 0.25rem;">${roleIcons[r] || r}</span>`
             ).join('');
         }
 
-        list.innerHTML = `
-            <div class="table-container">
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Username</th>
-                                <th>Role</th>
-                                <th>Created At</th>
-                                <th style="text-align: right;">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${users.map(u => `
-                                <tr>
-                                    <td>
-                                        <div style="font-weight: 600; color: #fff;">${u.username}</div>
-                                    </td>
-                                    <td>
-                                        <div style="display:flex;flex-wrap:wrap;gap:0.25rem;">
-                                            ${roleBadges(u.role)}
-                                        </div>
-                                    </td>
-                                    <td style="color: #94a3b8;">${new Date(u.created_at).toLocaleDateString()}</td>
-                                    <td>
-                                        <div class="action-btn-group" style="display:flex;gap:0.35rem;flex-wrap:wrap;">
-                                            <button class="btn btn-sm btn-primary" onclick="showEditUserModal('${u.id}', '${u.username}', '${u.role}')">
-                                                ✏️ Edit
-                                            </button>
-                                            <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.username}')">
-                                                🗑️ Del
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+        // Use cards-grid for consistency
+        list.className = 'cards-grid';
+        list.innerHTML = users.map(u => `
+            <div class="card user-card">
+                <div class="card-header">
+                    <div class="card-title">${u.username}</div>
+                    <div class="card-status running">Active</div>
+                </div>
+                <div class="card-body" style="flex: 1; display: flex; flex-direction: column;">
+                    <div class="detail-label" style="margin-top: 0.5rem;">Permissions / Roles</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:0.35rem; margin-bottom: 1rem;">
+                        ${roleBadges(u.role) || '<span style="color:#64748b; font-size:0.8rem;">No roles assigned</span>'}
+                    </div>
+                    <div class="detail-label">Member Since</div>
+                    <div class="detail-value" style="margin-bottom: 1.5rem;">${new Date(u.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                </div>
+                <div class="card-actions" style="margin-top: auto; display: flex; gap: 0.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <button class="btn btn-sm btn-primary" style="flex: 1;" onclick="showEditUserModal('${u.id}', '${u.username}', '${u.role}')">Edit</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}', '${u.username}')">Delete</button>
                 </div>
             </div>
-        `;
+        `).join('');
     } catch (e) {
         console.error('Error loading users:', e);
-        list.innerHTML = `<div class="error" style="padding: 1rem; color: #ef4444;">Error: ${e.message}</div>`;
+        list.innerHTML = `<div class="error">Error: ${e.message}</div>`;
     }
 }
 
 function _roleCheckboxes(selectedRoles) {
     const allRoles = [
-        { value: 'admin',             label: '👑 Admin' },
-        { value: 'user_docker',       label: '🐳 Docker Full' },
+        { value: 'admin', label: '👑 Admin' },
+        { value: 'user_docker', label: '🐳 Docker Full' },
         { value: 'user_docker_basic', label: '🐳 Docker Basic' },
-        { value: 'user_k8s_full',     label: '☸️ K8s Full' },
-        { value: 'user_k8s_view',     label: '👁️ K8s View' },
-        { value: 'user_cicd_full',    label: '🚀 CI/CD Full' },
-        { value: 'user_cicd_view',    label: '👁️ CI/CD View' },
+        { value: 'user_k8s_full', label: '☸️ K8s Full' },
+        { value: 'user_k8s_view', label: '👁️ K8s View' },
+        { value: 'user_cicd_full', label: '🚀 CI/CD Full' },
+        { value: 'user_cicd_view', label: '👁️ CI/CD View' },
     ];
     return `<div id="role-checkboxes" style="display:grid;grid-template-columns:1fr 1fr;gap:0.4rem;background:rgba(0,0,0,0.2);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:0.75rem;">
         ${allRoles.map(r => `
@@ -233,34 +214,35 @@ async function submitCreateUser() {
 async function loadProjects() {
     const list = document.getElementById('projects-list');
     if (!list) return;
-    list.innerHTML = '<div class="loading">Loading...</div>';
+    list.innerHTML = '<div class="loading">Loading projects...</div>';
 
     try {
         const res = await fetch(`${API_BASE}/projects`);
-        if (!res.ok) throw new Error('Failed');
+        if (!res.ok) throw new Error('Failed to fetch projects');
         const projects = (await res.json()) || [];
 
         if (!projects || projects.length === 0) {
-            list.innerHTML = '<div>No projects found</div>';
+            list.innerHTML = '<div class="empty-state">No projects found</div>';
             return;
         }
 
         list.innerHTML = projects.map(p => `
-            <div class="card">
+            <div class="card project-card">
                 <div class="card-header">
-                    <h3>${p.name}</h3>
+                    <div class="card-title">${p.name}</div>
+                    <div class="card-status running">Active</div>
                 </div>
-                <div class="card-body">
-                    <p>${p.description || 'No description'}</p>
+                <div class="card-body" style="flex: 1;">
+                    <p style="color: #94a3b8; font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.5rem;">${p.description || 'No description provided for this project.'}</p>
                 </div>
-                <div class="card-actions" style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                <div class="card-actions" style="margin-top: auto; display: flex; gap: 0.5rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.05);">
                     <button class="btn btn-primary" style="flex: 1;" onclick="manageProject('${p.id}')">Manage</button>
                     <button class="btn btn-danger" onclick="deleteProject('${p.id}', '${p.name}')">Delete</button>
                 </div>
             </div>
         `).join('');
     } catch (e) {
-        list.innerHTML = `<div class="error">${e.message}</div>`;
+        list.innerHTML = `<div class="error">Error: ${e.message}</div>`;
     }
 }
 
@@ -602,7 +584,7 @@ async function showNsAssignModal(userId, username) {
         return;
     }
 
-    let clusterOptions = clusters.map(c => 
+    let clusterOptions = clusters.map(c =>
         `<option value="${c.id}">${c.name}</option>`
     ).join('');
 
