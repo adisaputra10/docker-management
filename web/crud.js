@@ -27,6 +27,8 @@ const TEMPLATE_ICONS = {
     pgadmin: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a5 5 0 0 0-5 5v1H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-3V7a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v1H9V7a3 3 0 0 1 3-3zm-1 8h2v4h-2v-4zm-3 1h2v3H8v-3zm6 0h2v3h-2v-3z"/></svg>`,
     // openclaw uses logo_url instead of SVG
     openclaw: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>`,
+    n8n: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 18l-8-4V8l8-4 8 4v8l-8 4zm-4-9h8v2H8v-2z"/></svg>`,
+    flowise: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2L2 7v10l10 5 10-5V7L12 2zM7 11V9l5-2.5L17 9v2l-5 2.5L7 11zM7 15l5 2.5 5-2.5v-2l-5 2.5L7 13v2z"/></svg>`,
 };
 
 const TEMPLATE_ICON_COLORS = {
@@ -48,6 +50,8 @@ const TEMPLATE_ICON_COLORS = {
     elasticsearch: '#005571',
     pgadmin: '#336791',
     openclaw: '#ff4d00',
+    n8n: '#f97316',
+    flowise: '#4f46e5',
 };
 
 const DEPLOYMENT_TEMPLATES = [
@@ -63,6 +67,26 @@ const DEPLOYMENT_TEMPLATES = [
         type: 'compose',
         logo_url: 'https://www.cnet.com/a/img/resize/8ee704adc959642b8f136a52ebf81860050bdf60/hub/2026/01/30/a0605f4b-533d-410e-9bbf-49113e923a1b/image.png?auto=webp&fit=crop&height=1200&width=1200',
         icon_override: 'openclaw',
+    },
+    {
+        id: 'n8n',
+        name: 'n8n',
+        description: 'Workflow automation tool — build complex automations with a visual interface. Fair-code self-hosted.',
+        category: 'automation',
+        hot: true,
+        type: 'compose',
+        logo_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ8b13FupbJiqRDcYQbK4BfEcAJ6S7eA8I5oQ&s',
+        icon_override: 'n8n',
+    },
+    {
+        id: 'flowise',
+        name: 'FlowiseAI',
+        description: 'Open-source low-code tool for building customized LLM orchestration and AI agents.',
+        category: 'ai',
+        hot: true,
+        type: 'compose',
+        logo_url: 'https://cdn-1.webcatalog.io/catalog/flowiseai/flowiseai-icon-filled-256.webp?v=1748322017965',
+        icon_override: 'flowise',
     },
 
     // 🌐 Web
@@ -263,6 +287,10 @@ function showComposeTemplateModal(template) {
         showPrometheusGrafanaCompose();
     } else if (template.id === 'openclaw') {
         showOpenclawCompose();
+    } else if (template.id === 'n8n') {
+        showN8nCompose();
+    } else if (template.id === 'flowise') {
+        showFlowiseCompose();
     } else {
         showToast('Compose template not found', 'error');
     }
@@ -405,6 +433,15 @@ datasources:
                     <div><span style="color:#6366f1;font-weight:700;">4.</span> Run: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">docker compose up -d</code></div>
                     <div><span style="color:#6366f1;font-weight:700;">5.</span> Open Grafana at <a href="http://localhost:3000" target="_blank" rel="noopener" style="color:#818cf8;">http://localhost:3000</a> — login admin/adminpassword</div>
                 </div>
+            </div>
+
+            <!-- Environment Variables -->
+            <div>
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem;">
+                    ⚙️ Environment Variables
+                    <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);text-transform:none;">(One per line, e.g. GF_SECURITY_ADMIN_PASSWORD=adm)</span>
+                </div>
+                <textarea id="monitoring-env-input" class="form-control" rows="3" placeholder="GF_SECURITY_ADMIN_PASSWORD=adminpassword" style="font-family:monospace;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(230,82,44,0.3);border-radius:0.5rem;padding:0.75rem;color:#e2e8f0;width:100%;box-sizing:border-box;"></textarea>
             </div>
 
             <!-- docker-compose.yml -->
@@ -638,22 +675,14 @@ function deployGrafanaStack() {
             env: ['GF_SECURITY_ADMIN_USER=admin', 'GF_SECURITY_ADMIN_PASSWORD=adminpassword', 'GF_USERS_ALLOW_SIGN_UP=false', 'GF_SERVER_ROOT_URL=http://localhost:3000'],
             ports: ['3000:3000']
         },
-        {
-            name: 'node-exporter',
-            image: 'prom/node-exporter:latest',
-            restart: 'unless-stopped',
-            volumes: ['/proc:/host/proc', '/sys:/host/sys', '/:/rootfs'],
-            command: ['--path.procfs=/host/proc', '--path.rootfs=/rootfs', '--path.sysfs=/host/sys', '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'],
-            ports: ['9100:9100']
-        }
     ];
-    deployComposeStack('monitoring', services, ['prometheus_data', 'grafana_data']);
+    deployComposeStack('monitoring', services, ['prometheus_data', 'grafana_data'], ['monitoring']);
 }
 
 function deployOpenclawStack() {
     // Parse environment variables from the textarea
     const envText = document.getElementById('openclaw-env-input')?.value || '';
-    const userEnv = envText.split('\\n')
+    const userEnv = envText.split('\n')
         .map(line => line.trim())
         .filter(line => line.length > 0 && line.includes('='));
 
@@ -683,6 +712,237 @@ function deployOpenclawStack() {
     ];
     deployComposeStack('openclaw', services, ['openclaw_data']);
 }
+
+function showN8nCompose() {
+    const composeYaml = `version: '3.8'
+
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: always
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      - WEBHOOK_URL=http://localhost:5678/
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - n8n_local_files:/files
+
+volumes:
+  n8n_data:
+  n8n_local_files:`;
+
+    const content = `
+        <div style="display:flex;flex-direction:column;gap:1.25rem;">
+            <!-- Header -->
+            <div style="display:flex;align-items:center;gap:0.75rem;background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.25);border-radius:0.75rem;padding:1rem;">
+                <div style="width:52px;height:52px;flex-shrink:0;border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.1);">
+                    <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQ8b13FupbJiqRDcYQbK4BfEcAJ6S7eA8I5oQ&s" 
+                         alt="n8n" style="width:48px;height:48px;object-fit:contain;">
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:1.1rem;display:flex;align-items:center;gap:0.5rem;">
+                        n8n
+                        <span style="font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:999px;background:linear-gradient(135deg,#ff4d00,#ff9500);color:#fff;">🔥 HOT</span>
+                    </div>
+                    <div style="color:var(--text-muted);font-size:0.8rem;">Workflow automation tool</div>
+                </div>
+                <span style="margin-left:auto;font-size:0.65rem;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">Compose Stack</span>
+            </div>
+
+            <!-- What is n8n -->
+            <div style="background:rgba(0,0,0,0.15);border-radius:0.75rem;padding:1rem;font-size:0.82rem;color:var(--text-muted);line-height:1.6;">
+                <span style="color:#f97316;font-weight:700;">n8n</span> is an extendable workflow automation tool. With a fair-code distribution model, n8n will always have visible source code, be available to self-host, and allow you to add your own custom functions, logic and apps.
+                <br><span style="font-size:0.75rem;color:#64748b;">📦 Image: <code style="color:#a5b4fc;">docker.n8n.io/n8nio/n8n:latest</code> · <a href="https://docs.n8n.io/" target="_blank" style="color:#818cf8;">Official Docs →</a></span>
+            </div>
+
+            <!-- Environment Variables -->
+            <div>
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem;">
+                    ⚙️ Environment Variables
+                    <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);text-transform:none;">(Add your custom variables, one per line)</span>
+                </div>
+                <textarea id="n8n-env-input" class="form-control" rows="5" placeholder="GENERIC_TIMEZONE=UTC\nNODE_ENV=production" style="font-family:monospace;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(249,115,22,0.3);border-radius:0.5rem;padding:0.75rem;color:#e2e8f0;width:100%;box-sizing:border-box;">GENERIC_TIMEZONE=UTC</textarea>
+            </div>
+
+            <!-- docker-compose.yml -->
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);">📄 docker-compose.yml</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="copyToClipboard('n8n-compose-content')">
+                        Copy
+                    </button>
+                </div>
+                <pre id="n8n-compose-content" style="background:rgba(0,0,0,0.35);border:1px solid rgba(249,115,22,0.15);border-radius:0.5rem;padding:1rem;font-size:0.72rem;line-height:1.5;overflow-x:auto;max-height:280px;overflow-y:auto;color:#e2e8f0;white-space:pre;">${escapeHtml(composeYaml)}</pre>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn btn-success" onclick="deployN8nStack()">
+                    🚀 Deploy Stack
+                </button>
+            </div>
+        </div>
+    `;
+    showModal('n8n — Workflow Automation', content);
+}
+
+function deployMonitoringStack() {
+    const envText = document.getElementById('monitoring-env-input')?.value || '';
+    const userEnv = envText.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0 && line.includes('='));
+
+    const services = [
+        {
+            name: 'prometheus',
+            image: 'prom/prometheus:latest',
+            restart: 'unless-stopped',
+            volumes: ['prometheus_data:/prometheus'],
+            ports: ['9090:9090'],
+            networks: ['monitoring'],
+            env: userEnv.filter(e => e.startsWith('PROMETHEUS_'))
+        },
+        {
+            name: 'grafana',
+            image: 'grafana/grafana:latest',
+            restart: 'unless-stopped',
+            volumes: ['grafana_data:/var/lib/grafana'],
+            ports: ['3000:3000'],
+            networks: ['monitoring'],
+            env: ['GF_SECURITY_ADMIN_USER=admin', 'GF_SECURITY_ADMIN_PASSWORD=adminpassword', ...userEnv]
+        }
+    ];
+    deployComposeStack('monitoring', services, ['prometheus_data', 'grafana_data'], ['monitoring']);
+}
+
+function deployN8nStack() {
+    const envText = document.getElementById('n8n-env-input')?.value || '';
+    const userEnv = envText.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0 && line.includes('='));
+
+    const services = [
+        {
+            name: 'n8n',
+            image: 'docker.n8n.io/n8nio/n8n:latest',
+            restart: 'always',
+            ports: ['5678:5678'],
+            volumes: ['n8n_data:/home/node/.n8n', 'n8n_local_files:/files'],
+            env: [
+                'N8N_PORT=5678',
+                'N8N_PROTOCOL=http',
+                'NODE_ENV=production',
+                'WEBHOOK_URL=http://localhost:5678/',
+                ...userEnv
+            ]
+        }
+    ];
+    deployComposeStack('n8n', services, ['n8n_data', 'n8n_local_files']);
+}
+
+function showFlowiseCompose() {
+    const composeYaml = `version: '3.8'
+
+services:
+  flowise:
+    image: flowiseai/flowise:latest
+    restart: always
+    environment:
+      - PORT=3000
+      - DATABASE_PATH=/root/.flowise
+      - APIKEY_PATH=/root/.flowise
+      - LOG_PATH=/root/.flowise/logs
+    volumes:
+      - flowise_data:/root/.flowise
+    ports:
+      - "3000:3000"
+
+volumes:
+  flowise_data:`;
+
+    const content = `
+        <div style="display:flex;flex-direction:column;gap:1.25rem;">
+            <!-- Header -->
+            <div style="display:flex;align-items:center;gap:0.75rem;background:rgba(79,70,229,0.08);border:1px solid rgba(79,70,229,0.25);border-radius:0.75rem;padding:1rem;">
+                <div style="width:52px;height:52px;flex-shrink:0;border-radius:10px;overflow:hidden;background:rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.1);">
+                    <img src="https://cdn-1.webcatalog.io/catalog/flowiseai/flowiseai-icon-filled-256.webp?v=1748322017965" 
+                         alt="Flowise" style="width:48px;height:48px;object-fit:contain;">
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:1.1rem;display:flex;align-items:center;gap:0.5rem;">
+                        FlowiseAI
+                        <span style="font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:999px;background:linear-gradient(135deg,#ff4d00,#ff9500);color:#fff;">🔥 HOT</span>
+                    </div>
+                    <div style="color:var(--text-muted);font-size:0.8rem;">Low-code LLM Orchestration</div>
+                </div>
+                <span style="margin-left:auto;font-size:0.65rem;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">Compose Stack</span>
+            </div>
+
+            <!-- What is Flowise -->
+            <div style="background:rgba(0,0,0,0.15);border-radius:0.75rem;padding:1rem;font-size:0.82rem;color:var(--text-muted);line-height:1.6;">
+                <span style="color:#4f46e5;font-weight:700;">FlowiseAI</span> is an open-source low-code tool for building customized LLM orchestration and AI agents. It allows you to build chatbots, search engines, and more using a dragndrop interface.
+                <br><span style="font-size:0.75rem;color:#64748b;">📦 Image: <code style="color:#a5b4fc;">flowiseai/flowise:latest</code> · <a href="https://docs.flowiseai.com/" target="_blank" style="color:#818cf8;">Official Docs →</a></span>
+            </div>
+
+            <!-- Environment Variables -->
+            <div>
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.75rem;display:flex;align-items:center;gap:0.5rem;">
+                    ⚙️ Environment Variables
+                </div>
+                <textarea id="flowise-env-input" class="form-control" rows="5" placeholder="PORT=3000\nFLOWISE_USERNAME=admin" style="font-family:monospace;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(79,70,229,0.3);border-radius:0.5rem;padding:0.75rem;color:#e2e8f0;width:100%;box-sizing:border-box;">PORT=3000</textarea>
+            </div>
+
+            <!-- docker-compose.yml -->
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);">📄 docker-compose.yml</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="copyToClipboard('flowise-compose-content')">
+                        Copy
+                    </button>
+                </div>
+                <pre id="flowise-compose-content" style="background:rgba(0,0,0,0.35);border:1px solid rgba(79,70,229,0.15);border-radius:0.5rem;padding:1rem;font-size:0.72rem;line-height:1.5;overflow-x:auto;max-height:280px;overflow-y:auto;color:#e2e8f0;white-space:pre;">${escapeHtml(composeYaml)}</pre>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn btn-success" onclick="deployFlowiseStack()">
+                    🚀 Deploy Stack
+                </button>
+            </div>
+        </div>
+    `;
+    showModal('FlowiseAI — LLM Orchestration', content);
+}
+
+function deployFlowiseStack() {
+    const envText = document.getElementById('flowise-env-input')?.value || '';
+    const userEnv = envText.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0 && line.includes('='));
+
+    const services = [
+        {
+            name: 'flowise',
+            image: 'flowiseai/flowise:latest',
+            restart: 'always',
+            ports: ['3000:3000'],
+            volumes: ['flowise_data:/root/.flowise'],
+            env: [
+                'PORT=3000',
+                'DATABASE_PATH=/root/.flowise',
+                'APIKEY_PATH=/root/.flowise',
+                'LOG_PATH=/root/.flowise/logs',
+                ...userEnv
+            ]
+        }
+    ];
+    deployComposeStack('flowise', services, ['flowise_data']);
+}
+
 
 function deployComposeStack(project, services, volumes = [], networks = []) {
     showToast(`Deploying ${project} compose stack...`, 'info');
@@ -842,35 +1102,42 @@ async function refreshVolumes() {
                 <thead>
                     <tr>
                         <th style="width: 40px;"></th>
-                        <th style="width: 35%;">Name</th>
-                        <th style="width: 15%;">Driver</th>
+                        <th style="width: 25%;">Name</th>
+                        <th style="width: 100px;">Driver</th>
+                        <th style="width: 80px;">Scope</th>
                         <th>Mountpoint</th>
-                        <th style="width: 180px;">Created</th>
-                        <th style="width: 100px; text-align: right;">Actions</th>
+                        <th style="width: 140px;">Created</th>
+                        <th style="width: 120px; text-align: right;">Status</th>
+                        <th style="width: 80px; text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${volumes.map(vol => {
-            const displayName = vol.name.length > 24 ? vol.name.substring(0, 12) + '...' + vol.name.substring(vol.name.length - 8) : vol.name;
+            const displayName = vol.name.length > 30 ? vol.name.substring(0, 15) + '...' + vol.name.substring(vol.name.length - 10) : vol.name;
+            const labelsStr = vol.labels ? Object.entries(vol.labels).map(([k, v]) => `${k}=${v}`).join('\n') : 'No labels';
+
             return `
                         <tr>
                             <td><span class="status-dot hollow"></span></td>
-                            <td style="font-weight: 500;" title="${vol.name}">
+                            <td style="font-weight: 500;" title="${vol.name}\n\nLabels:\n${labelsStr}">
                                 <span class="text-truncate">${displayName}</span>
                             </td>
                             <td class="text-secondary">${vol.driver}</td>
-                            <td class="text-secondary"><code class="text-truncate" title="${vol.mountpoint}">${vol.mountpoint}</code></td>
-                            <td class="text-secondary">${vol.created || 'N/A'}</td>
+                            <td class="text-secondary"><span style="font-size: 0.75rem;">${vol.scope || 'local'}</span></td>
+                            <td class="text-secondary"><code class="text-truncate" style="font-size: 0.75rem;" title="${vol.mountpoint}">${vol.mountpoint}</code></td>
+                            <td class="text-secondary" style="font-size: 0.75rem;">${vol.created ? new Date(vol.created).toLocaleString() : 'N/A'}</td>
                             <td style="text-align: right;">
-                                <div style="display: flex; gap: 0.5rem; justify-content: flex-end; align-items: center;">
-                                    ${vol.used ?
-                    '<span class="badge" style="background: rgba(16,185,129,0.1); color: #10b981; font-size: 0.65rem; padding: 2px 6px;">Used</span>' :
-                    '<span class="badge" style="background: rgba(107,114,128,0.1); color: #9ca3af; font-size: 0.65rem; padding: 2px 6px;">Unused</span>'
+                                ${vol.used ?
+                    '<span class="badge badge-success" style="background: rgba(16,185,129,0.1); color: #10b981; font-size: 0.65rem; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(16,185,129,0.2);">USED</span>' :
+                    '<span class="badge badge-secondary" style="background: rgba(107,114,128,0.1); color: #9ca3af; font-size: 0.65rem; padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(107,114,128,0.2);">UNUSED</span>'
                 }
-                                    <button class="btn btn-icon-tiny" onclick="inspectVolume('${vol.name}')" title="Inspect">
+                            </td>
+                            <td style="text-align: right;">
+                                <div style="display: flex; gap: 0.25rem; justify-content: flex-end; align-items: center;">
+                                    <button class="btn btn-icon-tiny" onclick="inspectVolume('${vol.name}')" title="Inspect Detail">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                     </button>
-                                    <button class="btn btn-icon-tiny" style="color: #ef4444;" onclick="removeVolume('${vol.name}')" title="Delete">
+                                    <button class="btn btn-icon-tiny" style="color: #ef4444;" onclick="removeVolume('${vol.name}')" title="Delete Volume">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                     </button>
                                 </div>
@@ -990,7 +1257,7 @@ async function pruneVolumes() {
         });
 
         const data = await response.json();
-        showToast(`Pruned volumes. Space reclaimed: ${formatBytes(data.spaceReclaimed || 0)}`, 'success');
+        showToast(`Pruned ${data.volumesDeleted || 0} volumes. Space reclaimed: ${formatBytes(data.spaceReclaimed || 0)}`, 'success');
         refreshVolumes();
     } catch (error) {
         showToast('Error pruning volumes', 'error');
@@ -1028,43 +1295,51 @@ async function refreshNetworks() {
                 <thead>
                     <tr>
                         <th style="width: 40px;"></th>
-                        <th style="width: 30%;">Name</th>
-                        <th style="width: 180px;">Network ID</th>
-                        <th style="width: 15%;">Driver</th>
-                        <th style="width: 100px;">Scope</th>
+                        <th style="width: 20%;">Name</th>
+                        <th style="width: 120px;">Subnet</th>
+                        <th style="width: 120px;">Gateway</th>
+                        <th style="width: 100px;">Driver</th>
+                        <th style="width: 80px;">Scope</th>
                         <th>Created</th>
-                        <th style="width: 100px; text-align: right;">Actions</th>
+                        <th style="width: 120px; text-align: right;">Status</th>
+                        <th style="width: 80px; text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${networks.map(net => {
             const isSystem = ['bridge', 'host', 'none'].includes(net.name);
-            const statusDot = isSystem ? '<span class="status-dot hollow"></span>' : '<span class="status-dot solid"></span>';
+            const statusDot = isSystem ? '<span class="status-dot hollow"></span>' : '<span class="status-dot solid" style="background: #6366f1;"></span>';
+            const labelsStr = net.labels ? Object.entries(net.labels).map(([k, v]) => `${k}=${v}`).join('\n') : 'No labels';
 
             return `
                             <tr>
                                 <td>${statusDot}</td>
-                                <td style="font-weight: 500;">
-                                    <span class="text-truncate" title="${net.name}">${net.name}</span>
+                                <td style="font-weight: 500;" title="${net.name}\n\nID: ${net.id}\nLabels:\n${labelsStr}">
+                                    <span class="text-truncate">${net.name}</span>
                                 </td>
-                                <td class="text-secondary"><code>${net.id.substring(0, 10)}</code></td>
+                                <td class="text-secondary"><span style="font-size: 0.75rem;">${net.ipv4_subnet || '-'}</span></td>
+                                <td class="text-secondary"><span style="font-size: 0.75rem;">${net.ipv4_gateway || '-'}</span></td>
                                 <td class="text-secondary">${net.driver}</td>
                                 <td class="text-secondary">${net.scope || 'local'}</td>
-                                <td class="text-secondary">${net.created}</td>
+                                <td class="text-secondary" style="font-size: 0.75rem;">${net.created}</td>
                                 <td style="text-align: right;">
-                                    <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                    <div style="display: flex; gap: 0.25rem; justify-content: flex-end; align-items: center;">
                                         ${net.used ?
-                    '<span class="badge" style="background: rgba(16,185,129,0.1); color: #10b981; font-size: 0.65rem; padding: 2px 6px;">Used</span>' :
-                    '<span class="badge" style="background: rgba(107,114,128,0.1); color: #9ca3af; font-size: 0.65rem; padding: 2px 6px;">Unused</span>'
+                    '<span class="badge" style="background: rgba(16,185,129,0.1); color: #10b981; font-size: 0.65rem; padding: 2px 6px; border: 1px solid rgba(16,185,129,0.2);">USED</span>' :
+                    '<span class="badge" style="background: rgba(107,114,128,0.1); color: #9ca3af; font-size: 0.65rem; padding: 2px 6px; border: 1px solid rgba(107,114,128,0.2);">UNUSED</span>'
                 }
-                                        <button class="btn btn-icon-tiny" onclick="inspectNetwork('${net.id}')" title="Inspect">
+                                        ${isSystem ? '<span class="badge" style="font-size: 0.65rem; opacity: 0.6; padding: 2px 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);">SYSTEM</span>' : ''}
+                                    </div>
+                                </td>
+                                <td style="text-align: right;">
+                                    <div style="display: flex; gap: 0.25rem; justify-content: flex-end;">
+                                        <button class="btn btn-icon-tiny" onclick="inspectNetwork('${net.id}')" title="Inspect Network">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                         </button>
                                         ${!isSystem ?
-                    `<button class="btn btn-icon-tiny" style="color: #ef4444;" onclick="removeNetwork('${net.id}', '${net.name}')" title="Delete">
+                    `<button class="btn btn-icon-tiny" style="color: #ef4444;" onclick="removeNetwork('${net.id}', '${net.name}')" title="Delete Network">
                                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18m-2 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                                            </button>` :
-                    '<span class="badge" style="font-size: 0.65rem; opacity: 0.5; padding: 2px 6px;">System</span>'
+                                            </button>` : ''
                 }
                                     </div>
                                 </td>
@@ -1324,11 +1599,11 @@ async function showCreateContainerModal() {
         const volumes = await volumesRes.json();
 
         // Generate options strings (passed to template picker)
-        const networkOptions = networks.map(n =>
+        const networkOptions = (networks || []).map(n =>
             `<option value="${n.name}">${n.name} (${n.driver})</option>`
         ).join('');
 
-        const volumeOptions = volumes.map(v =>
+        const volumeOptions = (volumes || []).map(v =>
             `<option value="${v.name}">${v.name}</option>`
         ).join('');
 

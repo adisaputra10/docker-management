@@ -35,11 +35,20 @@ func listNetworks(w http.ResponseWriter, r *http.Request) {
 		Created  string            `json:"created"`
 		Internal bool              `json:"internal"`
 		Labels   map[string]string `json:"labels"`
+		IPv4Subnet   string          `json:"ipv4_subnet"`
+		IPv4Gateway  string          `json:"ipv4_gateway"`
 		Used     bool              `json:"used"`
 	}
 
-	var response []NetworkResponse
+	response := []NetworkResponse{}
 	for _, net := range networks {
+		subnet := ""
+		gateway := ""
+		if len(net.IPAM.Config) > 0 {
+			subnet = net.IPAM.Config[0].Subnet
+			gateway = net.IPAM.Config[0].Gateway
+		}
+
 		response = append(response, NetworkResponse{
 			ID:       net.ID[:12],
 			Name:     net.Name,
@@ -48,6 +57,8 @@ func listNetworks(w http.ResponseWriter, r *http.Request) {
 			Created:  net.Created.Format("2006-01-02 15:04:05"),
 			Internal: net.Internal,
 			Labels:   net.Labels,
+			IPv4Subnet: subnet,
+			IPv4Gateway: gateway,
 			Used:     len(net.Containers) > 0,
 		})
 	}

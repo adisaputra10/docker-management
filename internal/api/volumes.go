@@ -44,10 +44,11 @@ func listVolumes(w http.ResponseWriter, r *http.Request) {
 		CreatedAt  string            `json:"created"`
 		Labels     map[string]string `json:"labels"`
 		Scope      string            `json:"scope"`
+		Options    map[string]string `json:"options"`
 		Used       bool              `json:"used"`
 	}
 
-	var response []VolumeResponse
+	response := []VolumeResponse{}
 	for _, vol := range volumes.Volumes {
 		response = append(response, VolumeResponse{
 			Name:       vol.Name,
@@ -56,6 +57,7 @@ func listVolumes(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:  vol.CreatedAt,
 			Labels:     vol.Labels,
 			Scope:      vol.Scope,
+			Options:    vol.Options,
 			Used:       usedVolumes[vol.Name],
 		})
 	}
@@ -173,7 +175,7 @@ func pruneVolumes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
-		"volumesDeleted": report.VolumesDeleted,
+		"volumesDeleted": len(report.VolumesDeleted),
 		"spaceReclaimed": report.SpaceReclaimed,
 	})
 }

@@ -6,8 +6,10 @@ import (
 	"net/http"
 
 	"github.com/adisaputra10/docker-management/internal/database"
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/volume"
 )
 
 func getDockerInfo(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +39,8 @@ func getStats(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	containers, _ := cli.ContainerList(ctx, container.ListOptions{All: true})
 	images, _ := cli.ImageList(ctx, image.ListOptions{All: true})
+	volumes, _ := cli.VolumeList(ctx, volume.ListOptions{})
+	networks, _ := cli.NetworkList(ctx, types.NetworkListOptions{})
 	info, _ := cli.Info(ctx)
 
 	var totalCPU float64
@@ -83,7 +87,9 @@ func getStats(w http.ResponseWriter, r *http.Request) {
 			"running": runningContainers,
 			"stopped": len(containers) - runningContainers,
 		},
-		"images": len(images),
+		"images":   len(images),
+		"volumes":  len(volumes.Volumes),
+		"networks": len(networks),
 		"usage": map[string]interface{}{
 			"cpu":    totalCPU,
 			"memory": totalMem,

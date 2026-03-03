@@ -520,8 +520,8 @@ async function fetchStats() {
                 running: stats.containers.running
             },
             images: stats.images,
-            volumes: stats.containers.total, // fallback or update if needed
-            networks: stats.containers.total // fallback or update if needed
+            volumes: stats.volumes || 0,
+            networks: stats.networks || 0
         });
     } catch (error) {
         console.error('Error fetching stats:', error);

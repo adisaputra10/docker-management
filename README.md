@@ -10,6 +10,7 @@
 - **Glassmorphism UI:** Tampilan modern dengan efek transparansi dan animasi halus.
 - **Real-time Monitoring:** Pantau status container (Running/Stopped), jumlah image, volume, dan network secara instan.
 - **Minimal List View:** Informasi ditampilkan rapi dalam row-based layout yang bersih, terinspirasi dari Activity Logs.
+- **Improved Resource Tracking:** Perbaikan akurasi jumlah Volume dan Network di sidebar serta deteksi penggunaan resource yang lebih cerdas.
 
 ### 🚀 Deployment Templates (NEW ✨)
 - **17 Template Siap Pakai:** Langsung deploy service populer tanpa konfigurasi manual.
@@ -24,6 +25,7 @@
 | 🌐 Web Server | Nginx, Apache HTTP |
 | 🔁 Proxy | Traefik |
 | 📝 CMS | WordPress |
+| 🛠️ Automation | n8n (HOT), Flowise (HOT), OpenClaw |
 | 🗄️ Database | MySQL 8, MariaDB, PostgreSQL, Redis, MongoDB |
 | ⚙️ DevOps | Portainer, pgAdmin 4 |
 | 📊 Monitoring | Grafana, Prometheus |
@@ -63,10 +65,10 @@
 - **Real-time Status:** Dashboard menampilkan status Traefik (Running/Stopped) dan lokasi containernya.
 
 
-### 🛠️ Manajemen Resource Lainnya
+### 🛠️ Manajemen Resource Lainnya (Improved ✨)
 - **Images:** Pull, Tag, Inspect, dan Hapus Docker Image.
-- **Volumes:** Buat dan kelola Volume data persisten.
-- **Networks:** Atur konfigurasi jaringan Docker dengan mudah.
+- **Volumes:** Buat dan kelola Volume data persisten. Kini dengan informasi detail Driver, Scope, dan status penggunaan (Used/Unused) yang akurat.
+- **Networks:** Atur konfigurasi jaringan Docker dengan mudah. Mendukung tampilan informasi detail IPv4 Subnet dan Gateway secara langsung di dashboard.
 
 ### 🚀 CI/CD Pipeline Management
 ![CI/CD Dashboard](web/cicd.png)
