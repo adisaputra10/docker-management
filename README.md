@@ -20,18 +20,20 @@
 - **Error Detail Modal:** Jika deploy gagal (misal: port sudah dipakai), error Docker lengkap ditampilkan dalam modal informatif.
 
 **Template tersedia:**
+
 | Kategori | Template |
 |---|---|
-| 🌐 Web Server | Nginx, Apache HTTP |
-| 🔁 Proxy | Traefik |
-| 📝 CMS | WordPress |
-| 🛠️ Automation | n8n (HOT), Flowise (HOT), OpenClaw |
-| 🗄️ Database | MySQL 8, MariaDB, PostgreSQL, Redis, MongoDB |
-| ⚙️ DevOps | Portainer, pgAdmin 4 |
-| 📊 Monitoring | Grafana, Prometheus |
-| 💬 Messaging | RabbitMQ |
-| 📦 Storage | MinIO |
-| 🔍 Search | Elasticsearch |
+| 🤖 **AI / ML** | **OpenClaw (HOT)**, **FlowiseAI (HOT)** |
+| 🛠️ **Automation** | **n8n (HOT)** |
+| 🌐 **Web Server** | Nginx, Apache HTTP |
+| 🔁 **Proxy** | Traefik |
+| 📝 **CMS** | WordPress |
+| ️ **Database** | MySQL 8, MariaDB, PostgreSQL, Redis, MongoDB |
+| ⚙️ **DevOps** | Portainer, pgAdmin 4 |
+| 📊 **Monitoring** | Grafana Monitoring (Full Stack), Grafana (Standalone), Prometheus |
+| 💬 **Messaging** | RabbitMQ |
+| 📦 **Storage** | MinIO |
+| 🔍 **Search** | Elasticsearch |
 
 ![Deploy Templates](web/screenshots/deploy-templates.png)
 
