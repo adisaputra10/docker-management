@@ -424,5 +424,3 @@ The application implements a strict permission system to separate Administrators
 3.  **Users** log in and can *only* see the containers within their assigned projects. They are restricted to performing **safe actions** (Restart) to resolve issues without modifying infrastructure.
 
 ---
-
-*Dibuat dengan ❤️ untuk komunitas Docker.*
