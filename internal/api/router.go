@@ -49,6 +49,12 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/containers/{id}/logs", getContainerLogs).Methods("GET")
 	api.HandleFunc("/containers/{id}/exec", execContainer).Methods("GET") // WebSocket
 
+	// Compose stacks
+	api.HandleFunc("/compose/deploy", deployComposeStack).Methods("POST")
+	api.HandleFunc("/compose/{project}/stop", stopComposeStack).Methods("POST")
+	api.HandleFunc("/compose/{project}/remove", removeComposeStack).Methods("DELETE")
+
+
 	// Images
 	api.HandleFunc("/images", listImages).Methods("GET")
 	api.HandleFunc("/images/pull", pullImage).Methods("POST")

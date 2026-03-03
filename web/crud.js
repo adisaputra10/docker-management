@@ -25,6 +25,8 @@ const TEMPLATE_ICONS = {
     minio: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H5zm7 4l5 9H7l5-9z"/></svg>`,
     elasticsearch: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/><path d="M7 11h8M11 7v8" stroke-linecap="round"/></svg>`,
     pgadmin: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a5 5 0 0 0-5 5v1H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-3V7a5 5 0 0 0-5-5zm0 2a3 3 0 0 1 3 3v1H9V7a3 3 0 0 1 3-3zm-1 8h2v4h-2v-4zm-3 1h2v3H8v-3zm6 0h2v3h-2v-3z"/></svg>`,
+    // openclaw uses logo_url instead of SVG
+    openclaw: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>`,
 };
 
 const TEMPLATE_ICON_COLORS = {
@@ -45,26 +47,57 @@ const TEMPLATE_ICON_COLORS = {
     minio: '#c72e49',
     elasticsearch: '#005571',
     pgadmin: '#336791',
+    openclaw: '#ff4d00',
 };
 
 const DEPLOYMENT_TEMPLATES = [
     { id: 'blank', name: 'Custom', description: 'Start from scratch with a blank form.', category: 'custom', image: '', ports: '', env: '', restart: 'no' },
+
+    // ⚡ HOT / TRENDING
+    {
+        id: 'openclaw',
+        name: 'OpenClaw',
+        description: 'AI coding agent gateway — run Claude/GPT/Gemini-powered agents in a sandboxed container. Trending now.',
+        category: 'ai',
+        hot: true,
+        type: 'compose',
+        logo_url: 'https://www.cnet.com/a/img/resize/8ee704adc959642b8f136a52ebf81860050bdf60/hub/2026/01/30/a0605f4b-533d-410e-9bbf-49113e923a1b/image.png?auto=webp&fit=crop&height=1200&width=1200',
+        icon_override: 'openclaw',
+    },
+
+    // 🌐 Web
     { id: 'nginx', name: 'Nginx', description: 'High-performance web server & reverse proxy.', category: 'web', image: 'nginx:alpine', ports: '80:80, 443:443', env: '', restart: 'unless-stopped' },
     { id: 'apache', name: 'Apache HTTP', description: "The world's most used web server.", category: 'web', image: 'httpd:alpine', ports: '80:80', env: '', restart: 'unless-stopped' },
     { id: 'traefik', name: 'Traefik', description: 'Modern HTTP reverse proxy & load balancer.', category: 'proxy', image: 'traefik:v3.0', ports: '80:80, 443:443, 8080:8080', env: '', restart: 'unless-stopped' },
     { id: 'wordpress', name: 'WordPress', description: 'Popular CMS. Requires a MySQL/MariaDB container.', category: 'cms', image: 'wordpress:latest', ports: '8080:80', env: 'WORDPRESS_DB_HOST=db:3306\nWORDPRESS_DB_USER=wordpress\nWORDPRESS_DB_PASSWORD=wordpress_password\nWORDPRESS_DB_NAME=wordpress', restart: 'unless-stopped' },
+
+    // 🗄️ Database
     { id: 'mysql', name: 'MySQL 8', description: "World's most popular open-source relational database.", category: 'database', image: 'mysql:8.0', ports: '3306:3306', env: 'MYSQL_ROOT_PASSWORD=rootpassword\nMYSQL_DATABASE=mydb\nMYSQL_USER=dbuser\nMYSQL_PASSWORD=dbpassword', restart: 'unless-stopped' },
     { id: 'mariadb', name: 'MariaDB', description: 'Community-developed MySQL-compatible database.', category: 'database', image: 'mariadb:latest', ports: '3306:3306', env: 'MYSQL_ROOT_PASSWORD=rootpassword\nMYSQL_DATABASE=mydb\nMYSQL_USER=dbuser\nMYSQL_PASSWORD=dbpassword', restart: 'unless-stopped' },
     { id: 'postgres', name: 'PostgreSQL', description: 'Advanced open-source relational database.', category: 'database', image: 'postgres:16-alpine', ports: '5432:5432', env: 'POSTGRES_USER=pguser\nPOSTGRES_PASSWORD=pgpassword\nPOSTGRES_DB=mydb', restart: 'unless-stopped' },
     { id: 'redis', name: 'Redis', description: 'In-memory data store, cache and message broker.', category: 'database', image: 'redis:7-alpine', ports: '6379:6379', env: '', restart: 'unless-stopped' },
     { id: 'mongodb', name: 'MongoDB', description: 'Document-oriented NoSQL database.', category: 'database', image: 'mongo:7', ports: '27017:27017', env: 'MONGO_INITDB_ROOT_USERNAME=admin\nMONGO_INITDB_ROOT_PASSWORD=adminpassword\nMONGO_INITDB_DATABASE=mydb', restart: 'unless-stopped' },
+
+    // ⚙️ DevOps
     { id: 'portainer', name: 'Portainer', description: 'Docker management UI (standalone agent).', category: 'devops', image: 'portainer/portainer-ce:latest', ports: '9000:9000, 9443:9443', env: '', restart: 'always' },
-    { id: 'grafana', name: 'Grafana', description: 'Open-source analytics & monitoring visualization.', category: 'monitoring', image: 'grafana/grafana:latest', ports: '3000:3000', env: 'GF_SECURITY_ADMIN_USER=admin\nGF_SECURITY_ADMIN_PASSWORD=adminpassword', restart: 'unless-stopped' },
-    { id: 'prometheus', name: 'Prometheus', description: 'Open-source monitoring and alerting toolkit.', category: 'monitoring', image: 'prom/prometheus:latest', ports: '9090:9090', env: '', restart: 'unless-stopped' },
+    { id: 'pgadmin', name: 'pgAdmin 4', description: 'Web-based PostgreSQL administration tool.', category: 'devops', image: 'dpage/pgadmin4:latest', ports: '5050:80', env: 'PGADMIN_DEFAULT_EMAIL=admin@example.com\nPGADMIN_DEFAULT_PASSWORD=adminpassword', restart: 'unless-stopped' },
+
+    // 📊 Monitoring — Docker Compose stacks
+    {
+        id: 'prometheus-grafana',
+        name: 'Grafana Monitoring',
+        description: 'Full monitoring stack: Prometheus scraping + Grafana dashboards. Ready-to-use Docker Compose.',
+        category: 'monitoring',
+        type: 'compose',
+        icon_override: 'prometheus',
+    },
+    { id: 'grafana', name: 'Grafana', description: 'Open-source analytics & monitoring visualization (standalone).', category: 'monitoring', image: 'grafana/grafana:latest', ports: '3000:3000', env: 'GF_SECURITY_ADMIN_USER=admin\nGF_SECURITY_ADMIN_PASSWORD=adminpassword', restart: 'unless-stopped' },
+    { id: 'prometheus', name: 'Prometheus', description: 'Open-source monitoring & alerting toolkit (standalone).', category: 'monitoring', image: 'prom/prometheus:latest', ports: '9090:9090', env: '', restart: 'unless-stopped' },
+
+    // 📨 Messaging / Storage / Search
     { id: 'rabbitmq', name: 'RabbitMQ', description: 'Message broker with management UI.', category: 'messaging', image: 'rabbitmq:3-management', ports: '5672:5672, 15672:15672', env: 'RABBITMQ_DEFAULT_USER=admin\nRABBITMQ_DEFAULT_PASS=adminpassword', restart: 'unless-stopped' },
     { id: 'minio', name: 'MinIO', description: 'High-performance S3-compatible object storage.', category: 'storage', image: 'minio/minio:latest', ports: '9000:9000, 9001:9001', env: 'MINIO_ROOT_USER=minioadmin\nMINIO_ROOT_PASSWORD=minioadmin', restart: 'unless-stopped' },
     { id: 'elasticsearch', name: 'Elasticsearch', description: 'Distributed search and analytics engine.', category: 'search', image: 'elasticsearch:8.12.0', ports: '9200:9200, 9300:9300', env: 'discovery.type=single-node\nES_JAVA_OPTS=-Xms512m -Xmx512m\nxpack.security.enabled=false', restart: 'unless-stopped' },
-    { id: 'pgadmin', name: 'pgAdmin 4', description: 'Web-based PostgreSQL administration tool.', category: 'devops', image: 'dpage/pgadmin4:latest', ports: '5050:80', env: 'PGADMIN_DEFAULT_EMAIL=admin@example.com\nPGADMIN_DEFAULT_PASSWORD=adminpassword', restart: 'unless-stopped' },
 ];
 
 const CATEGORY_LABELS = {
@@ -78,21 +111,42 @@ const CATEGORY_LABELS = {
     messaging: { label: 'Messaging', color: '#ec4899' },
     storage: { label: 'Storage', color: '#14b8a6' },
     search: { label: 'Search', color: '#eab308' },
+    ai: { label: 'AI', color: '#ff4d00' },
 };
 
 
 function showDeploymentTemplates(networkOptions, volumeOptions) {
     const templateCards = DEPLOYMENT_TEMPLATES.map(t => {
         const cat = CATEGORY_LABELS[t.category] || { label: t.category, color: '#94a3b8' };
-        const iconColor = TEMPLATE_ICON_COLORS[t.id] || '#94a3b8';
-        const iconSvg = TEMPLATE_ICONS[t.id] || TEMPLATE_ICONS.blank;
+        const iconId = t.icon_override || t.id;
+        const iconColor = TEMPLATE_ICON_COLORS[iconId] || '#94a3b8';
+        const iconSvg = TEMPLATE_ICONS[iconId] || TEMPLATE_ICONS.blank;
+
+        // Build icon element: logo_url takes priority over SVG
+        const iconHtml = t.logo_url
+            ? `<img src="${t.logo_url}" alt="${t.name}" style="width:36px;height:36px;object-fit:contain;border-radius:6px;"
+                   onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+               <span style="display:none;">${iconSvg}</span>`
+            : iconSvg;
+
+        // HOT badge
+        const hotBadge = t.hot
+            ? `<span style="position:absolute;top:-6px;right:-6px;font-size:0.6rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:999px;background:linear-gradient(135deg,#ff4d00,#ff9500);color:#fff;box-shadow:0 2px 8px rgba(255,77,0,.5);white-space:nowrap;">🔥 HOT</span>`
+            : '';
+
+        // Compose type indicator
+        const composeBadge = t.type === 'compose'
+            ? `<span style="font-size:0.6rem;font-weight:700;padding:2px 6px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);margin-left:4px;">Compose</span>`
+            : '';
+
         return `
-            <div class="template-card" onclick="applyDeploymentTemplate('${t.id}', ${JSON.stringify(networkOptions).replace(/"/g, '&quot;')}, ${JSON.stringify(volumeOptions).replace(/"/g, '&quot;')})">
-                <div class="template-card-icon" style="background: ${iconColor}22; color: ${iconColor}; border: 1.5px solid ${iconColor}44;">
-                    ${iconSvg}
+            <div class="template-card" onclick="applyDeploymentTemplate('${t.id}', ${JSON.stringify(networkOptions).replace(/"/g, '&quot;')}, ${JSON.stringify(volumeOptions).replace(/"/g, '&quot;')})" style="position:relative;">
+                ${hotBadge}
+                <div class="template-card-icon" style="background: ${iconColor}22; color: ${iconColor}; border: 1.5px solid ${iconColor}44; overflow:hidden;">
+                    ${iconHtml}
                 </div>
                 <div class="template-card-info">
-                    <div class="template-card-name">${t.name}</div>
+                    <div class="template-card-name" style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;">${t.name}${composeBadge}</div>
                     <div class="template-card-desc">${t.description}</div>
                 </div>
                 <span class="template-badge" style="background: ${cat.color}18; color: ${cat.color}; border-color: ${cat.color}33;">${cat.label}</span>
@@ -115,6 +169,12 @@ function showDeploymentTemplates(networkOptions, volumeOptions) {
 function applyDeploymentTemplate(templateId, networkOptions, volumeOptions) {
     const template = DEPLOYMENT_TEMPLATES.find(t => t.id === templateId);
     if (!template) return;
+
+    // Handle Docker Compose stack templates
+    if (template.type === 'compose') {
+        showComposeTemplateModal(template);
+        return;
+    }
 
     const defaultName = template.id === 'blank' ? '' : template.id.replace(/[^a-z0-9]/gi, '-');
 
@@ -194,6 +254,536 @@ function applyDeploymentTemplate(templateId, networkOptions, volumeOptions) {
     showModal(`🚀 Deploy — ${template.name}`, content);
 }
 
+// ================================================
+// DOCKER COMPOSE TEMPLATE MODALS
+// ================================================
+
+function showComposeTemplateModal(template) {
+    if (template.id === 'prometheus-grafana') {
+        showPrometheusGrafanaCompose();
+    } else if (template.id === 'openclaw') {
+        showOpenclawCompose();
+    } else {
+        showToast('Compose template not found', 'error');
+    }
+}
+
+function showPrometheusGrafanaCompose() {
+    const composeYaml = `version: '3.8'
+
+networks:
+  monitoring:
+    driver: bridge
+
+volumes:
+  prometheus_data: {}
+  grafana_data: {}
+
+services:
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    networks:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=adminpassword
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+    ports:
+      - "3000:3000"
+    networks:
+      - monitoring
+    depends_on:
+      - prometheus
+
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "9100:9100"
+    networks:
+      - monitoring`;
+
+    const prometheusConfig = `global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: 'docker'
+    static_configs:
+      - targets: ['host.docker.internal:9323']`;
+
+    const grafanaDatasource = `apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true`;
+
+    const content = `
+        <div style="display:flex;flex-direction:column;gap:1.25rem;">
+
+            <!-- Header -->
+            <div style="display:flex;align-items:center;gap:0.75rem;background:rgba(249,115,22,0.08);border:1px solid rgba(249,115,22,0.25);border-radius:0.75rem;padding:1rem;">
+                <div style="width:44px;height:44px;border-radius:10px;background:rgba(249,115,22,0.15);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <svg viewBox="0 0 24 24" fill="#e6522c" width="26" height="26"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" stroke="white" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:1rem;">Prometheus + Grafana Stack</div>
+                    <div style="color:var(--text-muted);font-size:0.8rem;">Full monitoring stack — Docker Compose ready-to-use</div>
+                </div>
+                <span style="margin-left:auto;font-size:0.65rem;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">Compose Stack</span>
+            </div>
+
+            <!-- Services included -->
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.6rem;">
+                <div style="background:rgba(230,82,44,0.08);border:1px solid rgba(230,82,44,0.2);border-radius:0.5rem;padding:0.65rem 0.75rem;">
+                    <div style="font-size:0.75rem;font-weight:700;color:#f97316;">Prometheus</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);">:9090 — Metrics</div>
+                </div>
+                <div style="background:rgba(244,104,0,0.08);border:1px solid rgba(244,104,0,0.2);border-radius:0.5rem;padding:0.65rem 0.75rem;">
+                    <div style="font-size:0.75rem;font-weight:700;color:#f46800;">Grafana</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);">:3000 — Dashboards</div>
+                </div>
+                <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:0.5rem;padding:0.65rem 0.75rem;">
+                    <div style="font-size:0.75rem;font-weight:700;color:#818cf8;">Node Exporter</div>
+                    <div style="font-size:0.7rem;color:var(--text-muted);">:9100 — Host metrics</div>
+                </div>
+            </div>
+
+            <!-- Steps -->
+            <div style="background:rgba(0,0,0,0.2);border-radius:0.75rem;padding:1rem;">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.75rem;">📋 Setup Steps</div>
+                <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.8rem;color:var(--text-muted);">
+                    <div><span style="color:#6366f1;font-weight:700;">1.</span> Create a folder: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">mkdir monitoring && cd monitoring</code></div>
+                    <div><span style="color:#6366f1;font-weight:700;">2.</span> Save the files below into that folder</div>
+                    <div><span style="color:#6366f1;font-weight:700;">3.</span> Create datasource dir: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">mkdir -p grafana/provisioning/datasources</code></div>
+                    <div><span style="color:#6366f1;font-weight:700;">4.</span> Run: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">docker compose up -d</code></div>
+                    <div><span style="color:#6366f1;font-weight:700;">5.</span> Open Grafana at <a href="http://localhost:3000" target="_blank" rel="noopener" style="color:#818cf8;">http://localhost:3000</a> — login admin/adminpassword</div>
+                </div>
+            </div>
+
+            <!-- docker-compose.yml -->
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);">📄 docker-compose.yml</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="copyToClipboard('compose-yaml-content')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy
+                    </button>
+                </div>
+                <pre id="compose-yaml-content" style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.07);border-radius:0.5rem;padding:1rem;font-size:0.72rem;line-height:1.5;overflow-x:auto;max-height:240px;overflow-y:auto;color:#e2e8f0;white-space:pre;">${escapeHtml(composeYaml)}</pre>
+            </div>
+
+            <!-- prometheus.yml -->
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);">📄 prometheus.yml</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="copyToClipboard('prom-config-content')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy
+                    </button>
+                </div>
+                <pre id="prom-config-content" style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.07);border-radius:0.5rem;padding:1rem;font-size:0.72rem;line-height:1.5;overflow-x:auto;max-height:160px;overflow-y:auto;color:#e2e8f0;white-space:pre;">${escapeHtml(prometheusConfig)}</pre>
+            </div>
+
+            <!-- grafana datasource -->
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);">📄 grafana/provisioning/datasources/prometheus.yml</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="copyToClipboard('grafana-ds-content')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy
+                    </button>
+                </div>
+                <pre id="grafana-ds-content" style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.07);border-radius:0.5rem;padding:1rem;font-size:0.72rem;line-height:1.5;overflow-x:auto;max-height:130px;overflow-y:auto;color:#e2e8f0;white-space:pre;">${escapeHtml(grafanaDatasource)}</pre>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn btn-secondary" onclick="downloadComposeFiles()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    Download Files
+                </button>
+                <button class="btn btn-success" onclick="deployGrafanaStack()">
+                    🚀 Deploy Stack
+                </button>
+            </div>
+        </div>
+    `;
+    showModal('📊 Prometheus + Grafana Stack', content);
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function copyToClipboard(elementId) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    const text = el.innerText || el.textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        showToast('Copied to clipboard!', 'success');
+    }).catch(() => {
+        showToast('Copy failed — try selecting manually', 'error');
+    });
+}
+
+function downloadComposeFiles() {
+    // Download docker-compose.yml
+    const composeEl = document.getElementById('compose-yaml-content');
+    const promEl = document.getElementById('prom-config-content');
+    const dsEl = document.getElementById('grafana-ds-content');
+    if (composeEl) downloadText('docker-compose.yml', composeEl.textContent);
+    if (promEl) setTimeout(() => downloadText('prometheus.yml', promEl.textContent), 200);
+    if (dsEl) setTimeout(() => downloadText('prometheus-datasource.yml', dsEl.textContent), 400);
+    showToast('Downloading 3 config files...', 'success');
+}
+
+function downloadText(filename, text) {
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+}
+
+function showOpenclawCompose() {
+    const composeYaml = `services:
+
+  openclaw-gateway:
+    image: ghcr.io/openclaw/openclaw:latest
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    ports:
+      - "18789:18789"   # Web UI
+      - "18788:18788"   # Gateway API
+    volumes:
+      - openclaw_data:/home/node
+      - /var/run/docker.sock:/var/run/docker.sock  # optional: agent sandbox
+    environment:
+      - OPENCLAW_HOME=/home/node
+      - OPENCLAW_CONTROL_ALLOW_FALLBACK=true
+      # Add your API keys below:
+      # - ANTHROPIC_API_KEY=sk-...
+      # - OPENAI_API_KEY=sk-...
+      # - GEMINI_API_KEY=AIza...
+    command: ["openclaw", "gateway", "--port", "18788", "--allow-unconfigured", "--bind", "lan"]
+
+  openclaw-cli:
+    image: ghcr.io/openclaw/openclaw:latest
+    network_mode: "service:openclaw-gateway"
+    volumes:
+      - openclaw_data:/home/node
+    environment:
+      - OPENCLAW_HOME=/home/node
+      - OPENCLAW_GATEWAY_CONTROLUI_DANGEROUSLYALLOWHOSTHEADERORIGINFALLBACK=true
+    command: ["tail", "-f", "/dev/null"]
+    depends_on:
+      - openclaw-gateway
+    profiles:
+      - cli   # run with: docker compose run --rm openclaw-cli <command>
+
+volumes:
+  openclaw_data: {}`;
+
+    const content = `
+        <div style="display:flex;flex-direction:column;gap:1.25rem;">
+
+            <!-- Header -->
+            <div style="display:flex;align-items:center;gap:0.75rem;background:rgba(255,77,0,0.08);border:1px solid rgba(255,77,0,0.25);border-radius:0.75rem;padding:1rem;">
+                <div style="width:52px;height:52px;flex-shrink:0;border-radius:10px;overflow:hidden;background:rgba(255,77,0,0.1);display:flex;align-items:center;justify-content:center;">
+                    <img src="https://www.cnet.com/a/img/resize/8ee704adc959642b8f136a52ebf81860050bdf60/hub/2026/01/30/a0605f4b-533d-410e-9bbf-49113e923a1b/image.png?auto=webp&fit=crop&height=1200&width=1200"
+                         alt="OpenClaw" style="width:48px;height:48px;object-fit:contain;"
+                         onerror="this.src='';this.parentElement.innerHTML='🦾';">
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;">
+                        OpenClaw
+                        <span style="font-size:0.6rem;font-weight:800;padding:2px 7px;border-radius:999px;background:linear-gradient(135deg,#ff4d00,#ff9500);color:#fff;">🔥 HOT</span>
+                    </div>
+                    <div style="color:var(--text-muted);font-size:0.8rem;">AI coding agent gateway — Claude / GPT / Gemini powered</div>
+                </div>
+                <span style="margin-left:auto;font-size:0.65rem;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.3);">Compose Stack</span>
+            </div>
+
+            <!-- What is OpenClaw -->
+            <div style="background:rgba(0,0,0,0.15);border-radius:0.75rem;padding:1rem;font-size:0.82rem;color:var(--text-muted);line-height:1.6;">
+                <span style="color:#fb923c;font-weight:700;">OpenClaw</span> is an AI coding agent gateway that can run Claude, GPT-4, or Gemini-based agents in isolation within Docker containers. Ideal for coding assistants, automation, and CI/CD workflows.
+                <br><span style="font-size:0.75rem;color:#64748b;">📦 Image: <code style="color:#a5b4fc;">ghcr.io/openclaw/openclaw:latest</code> · <a href="https://docs.openclaw.ai/install/docker" target="_blank" style="color:#818cf8;">Official Docs →</a></span>
+            </div>
+
+            <!-- Setup Steps -->
+            <div style="background:rgba(0,0,0,0.2);border-radius:0.75rem;padding:1rem;">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.75rem;">📋 Setup Steps</div>
+                <div style="display:flex;flex-direction:column;gap:0.5rem;font-size:0.8rem;color:var(--text-muted);">
+                    <div><span style="color:#ff4d00;font-weight:700;">1.</span> Create a folder: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">mkdir openclaw && cd openclaw</code></div>
+                    <div><span style="color:#ff4d00;font-weight:700;">2.</span> Save the <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">docker-compose.yml</code> below into that folder</div>
+                    <div><span style="color:#ff4d00;font-weight:700;">3.</span> Fill in your API keys in the environment (Anthropic / OpenAI / Gemini)</div>
+                    <div><span style="color:#ff4d00;font-weight:700;">4.</span> Run: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">docker compose up -d</code></div>
+                    <div><span style="color:#ff4d00;font-weight:700;">5.</span> Open Dashboard UI: <a href="http://127.0.0.1:18788" target="_blank" style="color:#818cf8;">http://127.0.0.1:18788</a></div>
+                    <div><span style="color:#ff4d00;font-weight:700;">6.</span> Get Token: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">docker compose run --rm openclaw-cli openclaw dashboard --no-open</code></div>
+                    <div><span style="color:#ff4d00;font-weight:700;">7.</span> Onboarding: <code style="background:rgba(0,0,0,0.3);padding:1px 6px;border-radius:4px;">docker compose run --rm openclaw-cli openclaw onboard</code></div>
+                </div>
+            </div>
+
+            <!-- Environment Variables Input -->
+            <div style="margin-bottom:1rem;">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.4rem;">🔑 Environment Variables</div>
+                <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:0.5rem;">Enter optional API keys or config (e.g. <code style="color:#a5b4fc;">OPENAI_API_KEY=sk-...</code>), one per line. They will be injected into the Gateway container.</div>
+                <textarea id="openclaw-env-input" class="form-control" rows="3" placeholder="OPENAI_API_KEY=sk-...\nANTHROPIC_API_KEY=sk-..." style="font-family:monospace;font-size:0.75rem;background:rgba(0,0,0,0.3);border:1px solid rgba(255,149,0,0.3);border-radius:0.5rem;padding:0.75rem;color:#e2e8f0;width:100%;box-sizing:border-box;"></textarea>
+            </div>
+
+            <!-- docker-compose.yml -->
+            <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">
+                    <div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);">📄 docker-compose.yml</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.72rem;padding:0.25rem 0.6rem;" onclick="copyToClipboard('openclaw-compose-content')">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;margin-right:4px;"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                        Copy
+                    </button>
+                </div>
+                <pre id="openclaw-compose-content" style="background:rgba(0,0,0,0.35);border:1px solid rgba(255,77,0,0.15);border-radius:0.5rem;padding:1rem;font-size:0.72rem;line-height:1.5;overflow-x:auto;max-height:280px;overflow-y:auto;color:#e2e8f0;white-space:pre;">${escapeHtml(composeYaml)}</pre>
+            </div>
+
+            <!-- Useful commands -->
+            <div style="background:rgba(0,0,0,0.15);border-radius:0.75rem;padding:1rem;">
+                <div style="font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.05em;margin-bottom:0.5rem;">🔧 Useful Commands</div>
+                <div style="display:flex;flex-direction:column;gap:0.4rem;font-size:0.75rem;">
+                    <code style="background:rgba(0,0,0,0.3);padding:4px 8px;border-radius:4px;color:#a5b4fc;">docker compose run --rm openclaw-cli openclaw status</code>
+                    <code style="background:rgba(0,0,0,0.3);padding:4px 8px;border-radius:4px;color:#a5b4fc;">docker compose run --rm openclaw-cli openclaw doctor</code>
+                    <code style="background:rgba(0,0,0,0.3);padding:4px 8px;border-radius:4px;color:#a5b4fc;">docker compose run --rm openclaw-cli openclaw dashboard --no-open</code>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+                <button class="btn btn-secondary" onclick="downloadText('docker-compose.yml', document.getElementById('openclaw-compose-content').textContent); showToast('Downloaded docker-compose.yml','success')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+                    Download YAML
+                </button>
+                <button class="btn btn-success" onclick="deployOpenclawStack()">
+                    🚀 Deploy Stack
+                </button>
+            </div>
+        </div>
+    `;
+    showModal('OpenClaw — AI Agent Gateway', content);
+}
+
+
+function deployGrafanaStack() {
+    const services = [
+        {
+            name: 'prometheus',
+            image: 'prom/prometheus:latest',
+            restart: 'unless-stopped',
+            volumes: ['prometheus_data:/prometheus'],
+            command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.path=/prometheus', '--storage.tsdb.retention.time=30d', '--web.enable-lifecycle'],
+            ports: ['9090:9090']
+        },
+        {
+            name: 'grafana',
+            image: 'grafana/grafana:latest',
+            restart: 'unless-stopped',
+            volumes: ['grafana_data:/var/lib/grafana'],
+            env: ['GF_SECURITY_ADMIN_USER=admin', 'GF_SECURITY_ADMIN_PASSWORD=adminpassword', 'GF_USERS_ALLOW_SIGN_UP=false', 'GF_SERVER_ROOT_URL=http://localhost:3000'],
+            ports: ['3000:3000']
+        },
+        {
+            name: 'node-exporter',
+            image: 'prom/node-exporter:latest',
+            restart: 'unless-stopped',
+            volumes: ['/proc:/host/proc', '/sys:/host/sys', '/:/rootfs'],
+            command: ['--path.procfs=/host/proc', '--path.rootfs=/rootfs', '--path.sysfs=/host/sys', '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'],
+            ports: ['9100:9100']
+        }
+    ];
+    deployComposeStack('monitoring', services, ['prometheus_data', 'grafana_data']);
+}
+
+function deployOpenclawStack() {
+    // Parse environment variables from the textarea
+    const envText = document.getElementById('openclaw-env-input')?.value || '';
+    const userEnv = envText.split('\\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0 && line.includes('='));
+
+    const baseGatewayEnv = [
+        'OPENCLAW_HOME=/home/node',
+        'OPENCLAW_GATEWAY_CONTROLUI_DANGEROUSLYALLOWHOSTHEADERORIGINFALLBACK=true'
+    ];
+
+    const services = [
+        {
+            name: 'openclaw-gateway',
+            image: 'ghcr.io/openclaw/openclaw:latest',
+            restart: 'unless-stopped',
+            ports: ['18789:18789', '18788:18788'],
+            volumes: ['openclaw_data:/home/node', '/var/run/docker.sock:/var/run/docker.sock'],
+            env: [...baseGatewayEnv, ...userEnv],
+            command: ["openclaw", "gateway", "--port", "18788", "--allow-unconfigured", "--bind", "lan"]
+        },
+        {
+            name: 'openclaw-cli',
+            image: 'ghcr.io/openclaw/openclaw:latest',
+            network_mode: 'service:openclaw-gateway', // will be replaced dynamically or rely on api behavior
+            volumes: ['openclaw_data:/home/node'],
+            env: ['OPENCLAW_HOME=/home/node', 'OPENCLAW_CONTROL_ALLOW_FALLBACK=true'],
+            command: ["tail", "-f", "/dev/null"]
+        }
+    ];
+    deployComposeStack('openclaw', services, ['openclaw_data']);
+}
+
+function deployComposeStack(project, services, volumes = [], networks = []) {
+    showToast(`Deploying ${project} compose stack...`, 'info');
+    closeModal();
+
+    // UI Progress Indicator
+    const containersList = document.getElementById('containers-list');
+    if (containersList) {
+        if (containersList.querySelector('.loading') && containersList.children.length === 1) {
+            containersList.innerHTML = '';
+        }
+        const dummyHtml = `
+            <div class="compose-group dummy-loading" id="loading-compose-${project.replace(/[^a-z0-9]/gi, '-')}" style="margin-bottom:1.5rem; background:rgba(0,0,0,0.15); border:1px solid rgba(59,130,246,0.3); border-radius:12px; overflow:hidden; grid-column: 1 / -1; box-shadow: 0 0 15px rgba(59,130,246,0.1);">
+                <div class="compose-group-header" style="display:flex; justify-content:space-between; align-items:center; padding:1rem 1.25rem; background:rgba(255,255,255,0.03); border-bottom:1px solid rgba(255,255,255,0.05);">
+                    <div style="display:flex; align-items:center; gap:0.75rem;">
+                        <div style="font-weight:700; font-size:1.1rem; color:#e2e8f0;">${project}</div>
+                        <span style="font-size:0.65rem; font-weight:700; padding:3px 8px; border-radius:999px; background:rgba(59,130,246,0.15); color:#60a5fa; border:1px solid rgba(59,130,246,0.3);">Deploying Stack</span>
+                    </div>
+                </div>
+                <div class="compose-group-grid" style="display:flex; align-items:center; justify-content:center; padding:1.5rem; flex-direction:column; gap:1rem;">
+                    <div class="spinner" style="width:30px;height:30px;border:3px solid rgba(59,130,246,0.3);border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite;"></div>
+                    <div style="color:var(--text-muted); font-size:0.9rem;" id="loading-compose-status-${project.replace(/[^a-z0-9]/gi, '-')}">Deploying ${services.length} services... Pulling images & starting containers.</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.7rem; padding:0.25rem 0.5rem;" onclick="document.getElementById('loading-compose-logs-${project.replace(/[^a-z0-9]/gi, '-')}').style.display='block'; this.style.display='none';">Show Logs</button>
+                </div>
+                <div id="loading-compose-logs-${project.replace(/[^a-z0-9]/gi, '-')}" style="display:none; padding:0 1rem 1rem 1rem;">
+                    <pre style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:0.75rem; font-size:0.75rem; color:#a5b4fc; height:150px; overflow-y:auto; margin:0; white-space:pre-wrap; font-family:monospace; line-height:1.4;" class="deploy-logs">> Starting compose deployment for project '${project}'...
+</pre>
+                </div>
+            </div>
+        `;
+        containersList.insertAdjacentHTML('afterbegin', dummyHtml);
+
+        // Simulate compose log progress
+        const logId = `loading-compose-logs-${project.replace(/[^a-z0-9]/gi, '-')}`;
+        const statusId = `loading-compose-status-${project.replace(/[^a-z0-9]/gi, '-')}`;
+        setTimeout(() => {
+            const logEl = document.querySelector(`#${logId} pre`);
+            if (logEl) {
+                logEl.innerHTML += `> Creating network ${project}_default (if missing)...\n> Creating volumes: ${volumes.join(', ') || 'none'}...\n`;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+        }, 1000);
+        setTimeout(() => {
+            const logEl = document.querySelector(`#${logId} pre`);
+            if (logEl) {
+                logEl.innerHTML += `> Requesting daemon to pull and start services: ${services.map(s => s.name).join(', ')}\n> (Waiting for image pulls...)\n`;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            const statEl = document.getElementById(statusId);
+            if (statEl) statEl.innerText = 'Pulling images and linking networks...';
+        }, 2500);
+        if (!document.getElementById('spin-keyframes')) {
+            const style = document.createElement('style');
+            style.id = 'spin-keyframes';
+            style.textContent = '@keyframes spin { 100% { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+        }
+    }
+
+    fetch(`${API_BASE}/compose/deploy`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify({ project, services, volumes, networks })
+    })
+        .then(response => {
+            if (!response.ok) {
+                return response.text().then(text => { throw new Error(text || 'Deployment failed'); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            const logId = `loading-compose-logs-${project.replace(/[^a-z0-9]/gi, '-')}`;
+            const logEl = document.querySelector(`#${logId} pre`);
+            if (logEl) {
+                logEl.innerHTML += `> ✅ Stack deployed! Created ${data.count} containers.\n`;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            const statEl = document.getElementById(`loading-compose-status-${project.replace(/[^a-z0-9]/gi, '-')}`);
+            if (statEl) statEl.innerText = 'Finishing...';
+
+            showToast(`Successfully deployed ${data.count} containers in ${project} stack!`, 'success');
+            setTimeout(() => { if (typeof refreshContainers === 'function') refreshContainers(true); }, 1500);
+        })
+        .catch(error => {
+            const logId = `loading-compose-logs-${project.replace(/[^a-z0-9]/gi, '-')}`;
+            const logEl = document.querySelector(`#${logId} pre`);
+            if (logEl) {
+                logEl.innerHTML += `> ❌ COMPOSE DEPLOYMENT ERROR:\n<span style="color:#fca5a5;">${error.message}</span>\n`;
+                logEl.scrollTop = logEl.scrollHeight;
+                document.getElementById(logId).style.display = 'block';
+            }
+            const statEl = document.getElementById(`loading-compose-status-${project.replace(/[^a-z0-9]/gi, '-')}`);
+            if (statEl) { statEl.innerText = 'Deployment Failed'; statEl.style.color = '#ef4444'; }
+
+            showToast(`Deploy failed: ${error.message}`, 'error');
+            setTimeout(() => { if (typeof refreshContainers === 'function') refreshContainers(true); }, 6000);
+        });
+}
 
 
 // ===================
@@ -272,7 +862,11 @@ async function refreshVolumes() {
                             <td class="text-secondary"><code class="text-truncate" title="${vol.mountpoint}">${vol.mountpoint}</code></td>
                             <td class="text-secondary">${vol.created || 'N/A'}</td>
                             <td style="text-align: right;">
-                                <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                <div style="display: flex; gap: 0.5rem; justify-content: flex-end; align-items: center;">
+                                    ${vol.used ?
+                    '<span class="badge" style="background: rgba(16,185,129,0.1); color: #10b981; font-size: 0.65rem; padding: 2px 6px;">Used</span>' :
+                    '<span class="badge" style="background: rgba(107,114,128,0.1); color: #9ca3af; font-size: 0.65rem; padding: 2px 6px;">Unused</span>'
+                }
                                     <button class="btn btn-icon-tiny" onclick="inspectVolume('${vol.name}')" title="Inspect">
                                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                     </button>
@@ -459,6 +1053,10 @@ async function refreshNetworks() {
                                 <td class="text-secondary">${net.created}</td>
                                 <td style="text-align: right;">
                                     <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                                        ${net.used ?
+                    '<span class="badge" style="background: rgba(16,185,129,0.1); color: #10b981; font-size: 0.65rem; padding: 2px 6px;">Used</span>' :
+                    '<span class="badge" style="background: rgba(107,114,128,0.1); color: #9ca3af; font-size: 0.65rem; padding: 2px 6px;">Unused</span>'
+                }
                                         <button class="btn btn-icon-tiny" onclick="inspectNetwork('${net.id}')" title="Inspect">
                                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                                         </button>
@@ -775,6 +1373,56 @@ async function createContainer() {
     showToast(`Deploying ${name}... pulling image if needed`, 'info');
     closeModal();
 
+    // UI Progress Indicator
+    const containersList = document.getElementById('containers-list');
+    if (containersList) {
+        if (containersList.querySelector('.loading') && containersList.children.length === 1) {
+            containersList.innerHTML = '';
+        }
+        const dummyHtml = `
+            <div class="card dummy-loading" id="loading-${name.replace(/[^a-z0-9]/gi, '-')}" style="border-color: rgba(59,130,246,0.3); box-shadow: 0 0 15px rgba(59,130,246,0.1);">
+                <div class="card-header">
+                    <div style="display:flex;align-items:center;gap:0.5rem;min-width:0;flex:1;">
+                        <div class="card-title" title="${name}" style="min-width:0;">${name}</div>
+                    </div>
+                    <div class="card-status" style="background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.2);">Installing</div>
+                </div>
+                <div style="padding:1.5rem 1rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;">
+                    <div class="spinner" style="width:30px;height:30px;border:3px solid rgba(59,130,246,0.3);border-top-color:#3b82f6;border-radius:50%;animation:spin 1s linear infinite;"></div>
+                    <div style="color:var(--text-muted);font-size:0.8rem;" id="loading-status-${name.replace(/[^a-z0-9]/gi, '-')}">Preparing deployment...</div>
+                    <button class="btn btn-sm btn-secondary" style="font-size:0.7rem; padding:0.25rem 0.5rem;" onclick="document.getElementById('loading-logs-${name.replace(/[^a-z0-9]/gi, '-')}').style.display='block'; this.style.display='none';">Show Logs</button>
+                </div>
+                <div id="loading-logs-${name.replace(/[^a-z0-9]/gi, '-')}" style="display:none; padding:0 1rem 1rem 1rem;">
+                    <pre style="background:rgba(0,0,0,0.5); border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:0.75rem; font-size:0.75rem; color:#a5b4fc; height:120px; overflow-y:auto; margin:0; white-space:pre-wrap; font-family:monospace; line-height:1.4;" class="deploy-logs">> Starting deployment for container ${name}...
+</pre>
+                </div>
+            </div>
+        `;
+        containersList.insertAdjacentHTML('afterbegin', dummyHtml);
+
+        // Simulate log progress for better UX during synchronous API call
+        const logId = `loading-logs-${name.replace(/[^a-z0-9]/gi, '-')}`;
+        const statusId = `loading-status-${name.replace(/[^a-z0-9]/gi, '-')}`;
+        setTimeout(() => {
+            const logEl = document.querySelector(`#${logId} pre`);
+            const statEl = document.getElementById(statusId);
+            if (logEl) { logEl.innerHTML += `> Creating volume bindings...\n> Checking network... ${networkMode || 'default'}\n`; logEl.scrollTop = logEl.scrollHeight; }
+            if (statEl) statEl.innerText = 'Configuring resources...';
+        }, 800);
+        setTimeout(() => {
+            const logEl = document.querySelector(`#${logId} pre`);
+            const statEl = document.getElementById(statusId);
+            if (logEl) { logEl.innerHTML += `> Requesting Docker daemon to pull image: ${image}\n> (This may take a while depending on image size and network...)\n`; logEl.scrollTop = logEl.scrollHeight; }
+            if (statEl) statEl.innerText = 'Pulling image & generating container...';
+        }, 1500);
+        if (!document.getElementById('spin-keyframes')) {
+            const style = document.createElement('style');
+            style.id = 'spin-keyframes';
+            style.textContent = '@keyframes spin { 100% { transform: rotate(360deg); } }';
+            document.head.appendChild(style);
+        }
+    }
+
     try {
         const response = await fetch(`${API_BASE}/containers/create`, {
             method: 'POST',
@@ -790,9 +1438,19 @@ async function createContainer() {
             })
         });
 
+        const logId = `loading-logs-${name.replace(/[^a-z0-9]/gi, '-')}`;
+        const logEl = document.querySelector(`#${logId} pre`);
+        const statEl = document.getElementById(`loading-status-${name.replace(/[^a-z0-9]/gi, '-')}`);
+
         if (response.ok) {
             const data = await response.json();
             const warnings = data.warnings || [];
+
+            if (logEl) {
+                logEl.innerHTML += `> ✅ Container generated successfully.\n> Container ID: ${data.id || 'N/A'}\n`;
+                logEl.scrollTop = logEl.scrollHeight;
+            }
+            if (statEl) statEl.innerText = 'Finishing...';
 
             // Check if any warning indicates a start failure
             const startFailure = warnings.find(w => w.includes('failed to start') || w.includes('Cannot start'));
@@ -830,29 +1488,28 @@ async function createContainer() {
             setTimeout(refreshContainers, 800);
         } else {
             const errorText = await response.text();
-            // Show detailed error modal
-            showModal('❌ Deploy Failed', `
-                <div style="margin-bottom: 1rem;">
-                    <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 0.5rem; padding: 0.875rem; margin-bottom: 0.75rem;">
-                        <div style="font-size: 0.75rem; font-weight: 700; color: #f87171; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem;">📛 Error Details</div>
-                        <code style="font-size: 0.78rem; color: #fca5a5; line-height: 1.5; display: block; word-break: break-all; white-space: pre-wrap;">${errorText.trim()}</code>
-                    </div>
-                    <div style="background: rgba(59, 130, 246, 0.06); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 0.5rem; padding: 0.75rem; font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;">
-                        💡 <strong>Tip:</strong> Check the error above. Common causes: image not found, port conflict, or invalid configuration.
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button class="btn btn-secondary" onclick="closeModal()">Close</button>
-                </div>
-            `);
+            if (logEl) {
+                logEl.innerHTML += `> ❌ DEPLOYMENT FAILED:\n<span style="color:#fca5a5;">${errorText}</span>\n`;
+                logEl.scrollTop = logEl.scrollHeight;
+                document.getElementById(logId).style.display = 'block';
+                if (statEl) { statEl.innerText = 'Deployment Failed'; statEl.style.color = '#ef4444'; }
+            }
+            showToast(`Failed to deploy container`, 'error');
+            setTimeout(() => { if (typeof refreshContainers === 'function') refreshContainers(true); }, 5000);
         }
     } catch (error) {
-        showModal('❌ Network Error', `
-            <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 0.5rem; padding: 0.875rem; margin-bottom: 1rem;">
-                <code style="font-size: 0.78rem; color: #fca5a5;">${error.message || 'Unknown error'}</code>
-            </div>
-            <div class="modal-actions"><button class="btn btn-secondary" onclick="closeModal()">Close</button></div>
-        `);
+        const logId = `loading-logs-${name.replace(/[^a-z0-9]/gi, '-')}`;
+        const logEl = document.querySelector(`#${logId} pre`);
+        const statEl = document.getElementById(`loading-status-${name.replace(/[^a-z0-9]/gi, '-')}`);
+
+        if (logEl) {
+            logEl.innerHTML += `> ❌ DEPLOYMENT ERROR:\n<span style="color:#fca5a5;">${error.message}</span>\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+            document.getElementById(logId).style.display = 'block';
+            if (statEl) { statEl.innerText = 'System Error'; statEl.style.color = '#ef4444'; }
+        }
+        showToast('Error deploying container: ' + error.message, 'error');
+        setTimeout(() => { if (typeof refreshContainers === 'function') refreshContainers(true); }, 5000);
     }
 }
 

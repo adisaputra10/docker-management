@@ -4,6 +4,16 @@ const API_BASE = '/api';
 let activeContainerId = null;
 let activeContainerName = null;
 
+// ============================================================
+// PROTECTED CONTAINERS — cannot be stopped/deleted via dashboard
+// Must be managed using local Docker CLI or Docker Desktop.
+// ============================================================
+const PROTECTED_CONTAINERS = new Set(['docker-management']);
+
+function isProtected(name) {
+    return PROTECTED_CONTAINERS.has(name);
+}
+
 // ====================
 // FETCH INTERCEPTOR (For Multi-Host Support)
 // ====================
@@ -490,9 +500,14 @@ async function fetchStats() {
         if (cpuEl) cpuEl.textContent = `${stats.usage.cpu.toFixed(1)}%`;
 
         const memEl = document.querySelector('#stat-memory .stat-value');
+        const memCapEl = document.querySelector('#stat-memory .stat-capacity');
         if (memEl) {
             const memMB = (stats.usage.memory / (1024 * 1024)).toFixed(0);
             memEl.textContent = `${memMB} MB`;
+            if (stats.info && stats.info.memTotal && memCapEl) {
+                const totalGB = (stats.info.memTotal / (1024 * 1024 * 1024)).toFixed(1);
+                memCapEl.textContent = ` / ${totalGB} GB`;
+            }
         }
 
         const runningEl = document.querySelector('#stat-running .stat-value');
@@ -553,10 +568,28 @@ async function refreshContainers(silent = false) {
             ? containers.filter(c => c.state === 'running')
             : containers;
 
-        const html = filteredContainers.map(container => `
-            <div class="card" data-id="${container.id}" onclick="viewContainerDetails('${container.id}', '${container.name}')" style="animation: cardEntry 0.4s ease forwards;">
+        const grouped = {};
+        const standalone = [];
+
+        filteredContainers.forEach(container => {
+            const project = container.labels && container.labels['com.docker.compose.project'];
+            if (project) {
+                if (!grouped[project]) grouped[project] = [];
+                grouped[project].push(container);
+            } else {
+                standalone.push(container);
+            }
+        });
+
+        const renderCard = (container) => {
+            const protected_ = isProtected(container.name);
+            return `
+            <div class="card" data-id="${container.id}" onclick="viewContainerDetails('${container.id}', '${container.name}')" style="animation: cardEntry 0.4s ease forwards; ${protected_ ? 'border-color: rgba(99,102,241,0.4);' : ''}">
                 <div class="card-header">
-                    <div class="card-title" title="${container.name}">${container.name || container.id.substring(0, 12)}</div>
+                    <div style="display:flex;align-items:center;gap:0.5rem;min-width:0;flex:1;">
+                        <div class="card-title" title="${container.name}" style="min-width:0;">${container.name || container.id.substring(0, 12)}</div>
+                        ${protected_ ? '<span style="font-size:0.68rem;font-weight:700;padding:2px 7px;border-radius:999px;background:rgba(99,102,241,0.15);color:#818cf8;border:1px solid rgba(99,102,241,0.35);white-space:nowrap;flex-shrink:0;">🔒 Protected</span>' : ''}
+                    </div>
                     <div class="card-status ${container.state === 'running' ? 'running' : 'stopped'}">
                         ${container.state}
                     </div>
@@ -584,7 +617,11 @@ async function refreshContainers(silent = false) {
                 </div>
 
                 <div class="card-actions" style="margin-top: auto; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    ${container.state === 'running' ? `
+                    ${protected_ ? `
+                        <div style="flex:1;display:flex;align-items:center;justify-content:center;gap:0.4rem;font-size:0.78rem;color:#818cf8;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:0.5rem;padding:0.5rem;">
+                            🔒 Manage via Docker CLI only
+                        </div>
+                    ` : container.state === 'running' ? `
                         <button class="btn btn-warning" onclick="event.stopPropagation(); stopContainer('${container.id}', '${container.name}')" style="flex: 1">
                             <svg viewBox="0 0 24 24" fill="currentColor" style="width: 14px; margin-right: 4px;">
                                 <rect x="6" y="6" width="12" height="12"/>
@@ -601,7 +638,43 @@ async function refreshContainers(silent = false) {
                     `}
                 </div>
             </div>
-        `).join('');
+            `;
+        };
+
+        const standaloneHtml = standalone.map(renderCard).join('');
+
+        const groupsHtml = Object.keys(grouped).sort().map(project => {
+            const projectContainers = grouped[project];
+            const runningCount = projectContainers.filter(c => c.state === 'running').length;
+            const totalCount = projectContainers.length;
+
+            return `
+                <div class="compose-group" style="margin-bottom:1.5rem; background:rgba(0,0,0,0.15); border:1px solid rgba(255,255,255,0.05); border-radius:12px; overflow:hidden; grid-column: 1 / -1;">
+                    <div class="compose-group-header" style="display:flex; justify-content:space-between; align-items:center; padding:1rem 1.25rem; background:rgba(255,255,255,0.03); border-bottom:1px solid rgba(255,255,255,0.05);">
+                        <div style="display:flex; align-items:center; gap:0.75rem;">
+                            <div style="font-weight:700; font-size:1.1rem; color:#e2e8f0;">${project}</div>
+                            <span style="font-size:0.65rem; font-weight:700; padding:3px 8px; border-radius:999px; background:rgba(99,102,241,0.15); color:#818cf8; border:1px solid rgba(99,102,241,0.3);">Compose Support</span>
+                            <span style="font-size:0.75rem; color:var(--text-muted);">${runningCount}/${totalCount} running</span>
+                        </div>
+                        <div style="display:flex; gap:0.5rem;">
+                            <button class="btn btn-sm btn-warning" onclick="stopComposeStack('${project}')">
+                                <svg viewBox="0 0 24 24" fill="currentColor" style="width:14px; margin-right:4px;"><rect x="6" y="6" width="12" height="12"/></svg>
+                                Stop All
+                            </button>
+                            <button class="btn btn-sm btn-danger" onclick="removeComposeStackUi('${project}')">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px; margin-right:4px;"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14z"/></svg>
+                                Remove All
+                            </button>
+                        </div>
+                    </div>
+                    <div class="compose-group-grid" style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:1rem; padding:1rem;">
+                        ${projectContainers.map(renderCard).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        const html = groupsHtml + standaloneHtml;
 
         // Use a slight fade out/in effect if updating
         if (containersList.innerHTML !== '') {
@@ -621,6 +694,50 @@ async function refreshContainers(silent = false) {
             showToast('Failed to load containers', 'error');
         }
         console.error('Error fetching containers:', error);
+    }
+}
+
+async function stopComposeStack(project) {
+    if (!confirm(`Are you sure you want to stop all containers in the '${project}' stack?`)) return;
+
+    showToast(`Stopping ${project} stack...`, 'info');
+    try {
+        const response = await fetch(`${API_BASE}/compose/${project}/stop`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            showToast(`✅ Stopped ${data.stopped.length} containers in ${project}`, 'success');
+            refreshContainers(true);
+        } else {
+            const errorText = await response.text();
+            showToast(`Failed to stop stack: ${errorText}`, 'error');
+        }
+    } catch (error) {
+        showToast('Error stopping stack: ' + error.message, 'error');
+    }
+}
+
+async function removeComposeStackUi(project) {
+    if (!confirm(`⚠️ DANGER: Are you sure you want to remove ALL containers and networks in the '${project}' stack? This cannot be undone.`)) return;
+
+    showToast(`Removing ${project} stack...`, 'info');
+    try {
+        const response = await fetch(`${API_BASE}/compose/${project}/remove`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            showToast(`✅ Removed ${data.removed.length} containers in ${project}`, 'success');
+            refreshContainers(true);
+        } else {
+            const errorText = await response.text();
+            showToast(`Failed to remove stack: ${errorText}`, 'error');
+        }
+    } catch (error) {
+        showToast('Error removing stack: ' + error.message, 'error');
     }
 }
 
@@ -664,6 +781,10 @@ async function startContainer(id, name) {
 
 
 async function stopContainer(id, name) {
+    if (isProtected(name)) {
+        showToast('🔒 "' + name + '" is protected. Use Docker CLI: docker stop ' + name, 'error');
+        return;
+    }
     try {
         const response = await fetch(`${API_BASE}/containers/${id}/stop`, {
             method: 'POST'
@@ -713,7 +834,11 @@ async function restartContainer(id, name) {
 }
 
 
-async function removeContainer(id) {
+async function removeContainer(id, name) {
+    if (name && isProtected(name)) {
+        showToast('🔒 "' + name + '" is protected. Use Docker CLI: docker rm -f ' + name, 'error');
+        return;
+    }
     if (!confirm('Are you sure you want to remove this container?')) {
         return;
     }
@@ -804,6 +929,31 @@ async function viewContainerDetails(id, name) {
                 <!-- Action Options -->
                 <div>
                     <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Actions & Tools</div>
+                    ${isProtected(name) ? `
+                    <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);border-radius:0.75rem;padding:1rem;margin-bottom:1rem;display:flex;align-items:flex-start;gap:0.75rem;">
+                        <span style="font-size:1.4rem;line-height:1;">🔒</span>
+                        <div>
+                            <div style="font-weight:700;color:#818cf8;margin-bottom:0.3rem;">Protected Container</div>
+                            <div style="font-size:0.82rem;color:#94a3b8;line-height:1.5;">This container is the Docker Management application itself and cannot be stopped or removed from this dashboard.</div>
+                            <div style="font-size:0.8rem;color:#64748b;margin-top:0.5rem;">To manage it, use:</div>
+                            <code style="display:block;margin-top:0.3rem;background:rgba(0,0,0,0.3);padding:0.4rem 0.6rem;border-radius:0.4rem;font-size:0.79rem;color:#a5b4fc;">docker stop docker-management</code>
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;">
+                        <button class="btn btn-primary" onclick="closeModal(); viewLogs('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                            View Logs
+                        </button>
+                        <button class="btn btn-secondary" onclick="closeModal(); execContainer('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                            Terminal
+                        </button>
+                        <button class="btn btn-secondary" onclick="closeModal(); inspectContainer('${id}')" style="justify-content: center; padding: 0.75rem;">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                            Raw JSON
+                        </button>
+                    </div>
+                    ` : `
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;">
                         <button class="btn btn-primary" onclick="closeModal(); viewLogs('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
@@ -832,11 +982,12 @@ async function viewContainerDetails(id, name) {
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                             Raw JSON
                         </button>
-                        <button class="btn btn-danger" onclick="removeContainer('${id}')" style="justify-content: center; padding: 0.75rem;">
+                        <button class="btn btn-danger" onclick="removeContainer('${id}', '${name}')" style="justify-content: center; padding: 0.75rem;">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                             Delete
                         </button>
                     </div>
+                    `}
                 </div>
             </div>
         `;
@@ -1371,6 +1522,30 @@ async function refreshActiveDetailView() {
                     <!-- Action Options -->
                     <div>
                         <div style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Actions & Tools</div>
+                        ${isProtected(activeContainerName) ? `
+                        <div style="background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.3);border-radius:0.75rem;padding:1rem;margin-bottom:1rem;display:flex;align-items:flex-start;gap:0.75rem;">
+                            <span style="font-size:1.4rem;line-height:1;">🔒</span>
+                            <div>
+                                <div style="font-weight:700;color:#818cf8;margin-bottom:0.3rem;">Protected Container</div>
+                                <div style="font-size:0.82rem;color:#94a3b8;line-height:1.5;">This container is the Docker Management application itself and cannot be stopped or removed from this dashboard.</div>
+                                <code style="display:block;margin-top:0.3rem;background:rgba(0,0,0,0.3);padding:0.4rem 0.6rem;border-radius:0.4rem;font-size:0.79rem;color:#a5b4fc;">docker stop docker-management</code>
+                            </div>
+                        </div>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;">
+                            <button class="btn btn-primary" onclick="closeModal(); viewLogs('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+                                View Logs
+                            </button>
+                            <button class="btn btn-secondary" onclick="closeModal(); execContainer('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+                                Terminal
+                            </button>
+                            <button class="btn btn-secondary" onclick="closeModal(); inspectContainer('${activeContainerId}')" style="justify-content: center; padding: 0.75rem;">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+                                Raw JSON
+                            </button>
+                        </div>
+                        ` : `
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;">
                             <button class="btn btn-primary" onclick="closeModal(); viewLogs('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
@@ -1399,11 +1574,12 @@ async function refreshActiveDetailView() {
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
                                 Raw JSON
                             </button>
-                            <button class="btn btn-danger" onclick="removeContainer('${activeContainerId}')" style="justify-content: center; padding: 0.75rem;">
+                            <button class="btn btn-danger" onclick="removeContainer('${activeContainerId}', '${activeContainerName}')" style="justify-content: center; padding: 0.75rem;">
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px; margin-right:8px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                                 Delete
                             </button>
                         </div>
+                        `}
                     </div>
                 </div>
             `;

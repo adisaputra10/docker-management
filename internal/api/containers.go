@@ -20,6 +20,12 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// protectedContainers lists containers that cannot be stopped, restarted,
+// or removed via the web dashboard. They must be managed via local Docker CLI.
+var protectedContainers = map[string]bool{
+	"docker-management": true,
+}
+
 // List Containers
 func listContainers(w http.ResponseWriter, r *http.Request) {
 	cli, err := GetClient(r)
@@ -377,9 +383,32 @@ func startContainer(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
 }
 
+// resolveContainerName returns the container name (without leading slash)
+// for the given container ID by inspecting it.
+func resolveContainerName(r *http.Request, containerID string) (string, error) {
+	cli, err := GetClient(r)
+	if err != nil {
+		return "", err
+	}
+	info, err := cli.ContainerInspect(context.Background(), containerID)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
 func stopContainer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	containerID := vars["id"]
+
+	// Protect system containers from being stopped via dashboard
+	if name, err := resolveContainerName(r, containerID); err == nil {
+		if protectedContainers[name] {
+			http.Error(w, "Container '"+name+"' is protected and cannot be stopped from the dashboard. Use local Docker CLI or Docker Desktop instead.", http.StatusForbidden)
+			database.LogActivity("stop_container", name, "blocked")
+			return
+		}
+	}
 
 	cli, err := GetClient(r)
 	if err != nil {
@@ -406,6 +435,15 @@ func restartContainer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	containerID := vars["id"]
 
+	// Protect system containers from being restarted via dashboard
+	if name, err := resolveContainerName(r, containerID); err == nil {
+		if protectedContainers[name] {
+			http.Error(w, "Container '"+name+"' is protected and cannot be restarted from the dashboard. Use local Docker CLI or Docker Desktop instead.", http.StatusForbidden)
+			database.LogActivity("restart_container", name, "blocked")
+			return
+		}
+	}
+
 	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -430,6 +468,15 @@ func restartContainer(w http.ResponseWriter, r *http.Request) {
 func removeContainer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	containerID := vars["id"]
+
+	// Protect system containers from being removed via dashboard
+	if name, err := resolveContainerName(r, containerID); err == nil {
+		if protectedContainers[name] {
+			http.Error(w, "Container '"+name+"' is protected and cannot be removed from the dashboard. Use local Docker CLI or Docker Desktop instead.", http.StatusForbidden)
+			database.LogActivity("remove_container", name, "blocked")
+			return
+		}
+	}
 
 	cli, err := GetClient(r)
 	if err != nil {

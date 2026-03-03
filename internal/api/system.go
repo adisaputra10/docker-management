@@ -51,11 +51,23 @@ func getStats(w http.ResponseWriter, r *http.Request) {
 			if err == nil {
 				var v container.StatsResponse
 				if err := json.NewDecoder(s.Body).Decode(&v); err == nil {
-					// CPU calculation (very simplified)
+					// CPU calculation
 					cpuDelta := float64(v.CPUStats.CPUUsage.TotalUsage) - float64(v.PreCPUStats.CPUUsage.TotalUsage)
 					systemDelta := float64(v.CPUStats.SystemUsage) - float64(v.PreCPUStats.SystemUsage)
-					if systemDelta > 0.0 && cpuDelta > 0.0 {
-						totalCPU += (cpuDelta / systemDelta) * float64(len(v.CPUStats.CPUUsage.PercpuUsage)) * 100.0
+					
+					// If PreCPUStats is missing/zero (common in non-streaming requests), approximate usage
+					if v.PreCPUStats.SystemUsage == 0 && v.CPUStats.SystemUsage > 0 {
+						numCores := float64(len(v.CPUStats.CPUUsage.PercpuUsage))
+						if numCores == 0 {
+							numCores = 1
+						}
+						totalCPU += (float64(v.CPUStats.CPUUsage.TotalUsage) / float64(v.CPUStats.SystemUsage)) * numCores * 100.0
+					} else if systemDelta > 0.0 && cpuDelta > 0.0 {
+						numCores := float64(len(v.CPUStats.CPUUsage.PercpuUsage))
+						if numCores == 0 {
+							numCores = 1
+						}
+						totalCPU += (cpuDelta / systemDelta) * numCores * 100.0
 					}
 					// Memory calculation
 					totalMem += v.MemoryStats.Usage

@@ -35,6 +35,7 @@ func listNetworks(w http.ResponseWriter, r *http.Request) {
 		Created  string            `json:"created"`
 		Internal bool              `json:"internal"`
 		Labels   map[string]string `json:"labels"`
+		Used     bool              `json:"used"`
 	}
 
 	var response []NetworkResponse
@@ -47,6 +48,7 @@ func listNetworks(w http.ResponseWriter, r *http.Request) {
 			Created:  net.Created.Format("2006-01-02 15:04:05"),
 			Internal: net.Internal,
 			Labels:   net.Labels,
+			Used:     len(net.Containers) > 0,
 		})
 	}
 

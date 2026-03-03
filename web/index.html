@@ -196,8 +196,15 @@
                             <span class="stat-value">0%</span>
                         </div>
                         <div class="stat-badge" id="stat-memory">
-                            <span class="stat-label">Memory</span>
-                            <span class="stat-value">0 MB</span>
+                            <div style="display: flex; flex-direction: column;">
+                                <span class="stat-label">Memory</span>
+                                <div>
+                                    <span class="stat-value">0 MB</span>
+                                    <span class="stat-capacity"
+                                        style="font-size: 0.8rem; color: rgba(255,255,255,0.5); font-weight: 500;">/ 0
+                                        GB</span>
+                                </div>
+                            </div>
                         </div>
                         <div class="stat-badge running" id="stat-running">
                             <span class="stat-label">Running</span>
@@ -651,8 +658,8 @@
         </div>
     </div>
 
-    <script src="crud.js?v=4"></script>
-    <script src="app.js?v=5"></script>
+    <script src="crud.js?v=6"></script>
+    <script src="app.js?v=7"></script>
     <script src="admin.js?v=1"></script>
     <script src="chat.js?v=2"></script>
     <script src="lb.js?v=2"></script>
