@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/adisaputra10/docker-management/internal/database"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/gorilla/mux"
@@ -25,6 +26,16 @@ func listVolumes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	containers, _ := cli.ContainerList(context.Background(), container.ListOptions{All: true})
+	usedVolumes := make(map[string]bool)
+	for _, c := range containers {
+		for _, m := range c.Mounts {
+			if m.Type == "volume" {
+				usedVolumes[m.Name] = true
+			}
+		}
+	}
+
 	// Transform to simple format
 	type VolumeResponse struct {
 		Name       string            `json:"name"`
@@ -33,9 +44,11 @@ func listVolumes(w http.ResponseWriter, r *http.Request) {
 		CreatedAt  string            `json:"created"`
 		Labels     map[string]string `json:"labels"`
 		Scope      string            `json:"scope"`
+		Options    map[string]string `json:"options"`
+		Used       bool              `json:"used"`
 	}
 
-	var response []VolumeResponse
+	response := []VolumeResponse{}
 	for _, vol := range volumes.Volumes {
 		response = append(response, VolumeResponse{
 			Name:       vol.Name,
@@ -44,6 +57,8 @@ func listVolumes(w http.ResponseWriter, r *http.Request) {
 			CreatedAt:  vol.CreatedAt,
 			Labels:     vol.Labels,
 			Scope:      vol.Scope,
+			Options:    vol.Options,
+			Used:       usedVolumes[vol.Name],
 		})
 	}
 
@@ -160,7 +175,7 @@ func pruneVolumes(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
-		"volumesDeleted": report.VolumesDeleted,
+		"volumesDeleted": len(report.VolumesDeleted),
 		"spaceReclaimed": report.SpaceReclaimed,
 	})
 }

@@ -1,0 +1,19 @@
+# Git
+.git
+.gitignore
+
+# Go
+vendor/
+*.test
+*.[568vo]
+
+# Binaries
+bin/
+docker-management
+
+# OS
+.DS_Store
+
+# Local config/data
+*.db
+*.log

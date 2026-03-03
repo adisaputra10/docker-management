@@ -32,7 +32,7 @@ func listImages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var imageInfos []models.ImageInfo
+	imageInfos := []models.ImageInfo{}
 	for _, img := range images {
 		repository := "<none>"
 		tag := "<none>"

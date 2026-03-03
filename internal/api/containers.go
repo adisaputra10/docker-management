@@ -2,8 +2,10 @@
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,10 +14,17 @@ import (
 	"github.com/adisaputra10/docker-management/internal/models"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
 	"github.com/gorilla/mux"
 )
+
+// protectedContainers lists containers that cannot be stopped, restarted,
+// or removed via the web dashboard. They must be managed via local Docker CLI.
+var protectedContainers = map[string]bool{
+	"docker-management": true,
+}
 
 // List Containers
 func listContainers(w http.ResponseWriter, r *http.Request) {
@@ -215,9 +224,26 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Auto-pull image if not present locally
+	ctx := context.Background()
+	_, _, inspectErr := cli.ImageInspectWithRaw(ctx, req.Image)
+	if inspectErr != nil {
+		// Image not found locally, pull it
+		pullReader, pullErr := cli.ImagePull(ctx, req.Image, image.PullOptions{})
+		if pullErr != nil {
+			http.Error(w, "Failed to pull image '"+req.Image+"': "+pullErr.Error(), http.StatusInternalServerError)
+			database.LogActivity("pull_image", req.Image, "error")
+			return
+		}
+		// Drain the reader to complete the pull
+		io.Copy(io.Discard, pullReader)
+		pullReader.Close()
+		database.LogActivity("pull_image", req.Image, "success")
+	}
+
 	// Create container
 	resp, err := cli.ContainerCreate(
-		context.Background(),
+		ctx,
 		config,
 		hostConfig,
 		networkConfig,
@@ -231,6 +257,20 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Start the container after creation
+	startErr := cli.ContainerStart(ctx, resp.ID, container.StartOptions{})
+	if startErr != nil {
+		// Container was created but failed to start; still report success with a warning
+		database.LogActivity("create_container", req.Name, "success")
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":  true,
+			"id":       resp.ID,
+			"warnings": append(resp.Warnings, "Container created but failed to start: "+startErr.Error()),
+		})
+		return
+	}
+
 	database.LogActivity("create_container", req.Name, "success")
 
 	w.Header().Set("Content-Type", "application/json")
@@ -240,6 +280,7 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 		"warnings": resp.Warnings,
 	})
 }
+
 
 // Rename container
 func renameContainer(w http.ResponseWriter, r *http.Request) {
@@ -342,9 +383,32 @@ func startContainer(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "started"})
 }
 
+// resolveContainerName returns the container name (without leading slash)
+// for the given container ID by inspecting it.
+func resolveContainerName(r *http.Request, containerID string) (string, error) {
+	cli, err := GetClient(r)
+	if err != nil {
+		return "", err
+	}
+	info, err := cli.ContainerInspect(context.Background(), containerID)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimPrefix(info.Name, "/"), nil
+}
+
 func stopContainer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	containerID := vars["id"]
+
+	// Protect system containers from being stopped via dashboard
+	if name, err := resolveContainerName(r, containerID); err == nil {
+		if protectedContainers[name] {
+			http.Error(w, "Container '"+name+"' is protected and cannot be stopped from the dashboard. Use local Docker CLI or Docker Desktop instead.", http.StatusForbidden)
+			database.LogActivity("stop_container", name, "blocked")
+			return
+		}
+	}
 
 	cli, err := GetClient(r)
 	if err != nil {
@@ -371,6 +435,15 @@ func restartContainer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	containerID := vars["id"]
 
+	// Protect system containers from being restarted via dashboard
+	if name, err := resolveContainerName(r, containerID); err == nil {
+		if protectedContainers[name] {
+			http.Error(w, "Container '"+name+"' is protected and cannot be restarted from the dashboard. Use local Docker CLI or Docker Desktop instead.", http.StatusForbidden)
+			database.LogActivity("restart_container", name, "blocked")
+			return
+		}
+	}
+
 	cli, err := GetClient(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -395,6 +468,15 @@ func restartContainer(w http.ResponseWriter, r *http.Request) {
 func removeContainer(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	containerID := vars["id"]
+
+	// Protect system containers from being removed via dashboard
+	if name, err := resolveContainerName(r, containerID); err == nil {
+		if protectedContainers[name] {
+			http.Error(w, "Container '"+name+"' is protected and cannot be removed from the dashboard. Use local Docker CLI or Docker Desktop instead.", http.StatusForbidden)
+			database.LogActivity("remove_container", name, "blocked")
+			return
+		}
+	}
 
 	cli, err := GetClient(r)
 	if err != nil {
@@ -444,6 +526,61 @@ func GetHostContainers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(containers)
+}
+
+// Get Container Logs
+func getContainerLogs(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id := vars["id"]
+
+	tailLines := r.URL.Query().Get("tail")
+	if tailLines == "" {
+		tailLines = "100" // Default to last 100 lines
+	}
+
+	cli, err := GetClient(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       tailLines,
+		Timestamps: true,
+	}
+
+	body, err := cli.ContainerLogs(context.Background(), id, options)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer body.Close()
+
+	// Body contains the multiplexed stream (8-byte header: [1]byte{type}, [3]byte{0}, [4]byte{size})
+	// if the container was not started with a TTY.
+	// We'll use a simple approach to strip these headers for cleaner display.
+	var result strings.Builder
+	header := make([]byte, 8)
+	for {
+		_, err := body.Read(header)
+		if err != nil {
+			break // EOF or error
+		}
+		
+		// The last 4 bytes are the size of the payload (big-endian)
+		count := binary.BigEndian.Uint32(header[4:])
+		payload := make([]byte, count)
+		_, err = body.Read(payload)
+		if err != nil {
+			break
+		}
+		result.Write(payload)
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(result.String()))
 }
 
 
