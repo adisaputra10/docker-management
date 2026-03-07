@@ -178,6 +178,10 @@ func UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Asynchronously re-sync Kubernetes RBAC so RoleBindings immediately
+	// reflect the new role without requiring kubeconfig re-download.
+	go TriggerRBACResyncForUser(id, roleStr)
+
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -547,6 +551,35 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Capture old namespace assignments before deletion (for RBAC cleanup)
+	var oldNamespaces []string
+	{
+		rows, _ := database.DB.Query(
+			"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
+			userID, body.ClusterID,
+		)
+		if rows != nil {
+			defer rows.Close()
+			for rows.Next() {
+				var ns string
+				rows.Scan(&ns) //nolint:errcheck
+				oldNamespaces = append(oldNamespaces, ns)
+			}
+		}
+	}
+
+	// Compute removed namespaces = old - new
+	newNSSet := make(map[string]bool, len(body.Namespaces))
+	for _, ns := range body.Namespaces {
+		newNSSet[ns] = true
+	}
+	var removedNS []string
+	for _, ns := range oldNamespaces {
+		if !newNSSet[ns] {
+			removedNS = append(removedNS, ns)
+		}
+	}
+
 	// Start transaction
 	tx, err := database.DB.Begin()
 	if err != nil {
@@ -581,6 +614,10 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Asynchronously sync Kubernetes RBAC so the user's existing kubeconfig
+	// immediately reflects the new namespace access without requiring re-download.
+	go TriggerRBACSync(userID, body.ClusterID, body.Namespaces, removedNS)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

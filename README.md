@@ -130,6 +130,7 @@ Setiap user yang memiliki akses Kubernetes dapat dibatasi hanya pada namespace y
 | lainnya | RoleBinding per namespace | `view` |
 
 - Kubeconfig yang di-generate hanya bisa mengakses namespace yang ditugaskan — `kubectl get pods -n other-ns` akan ditolak.
+- **Auto-sync RBAC:** Setiap kali namespace ditambahkan atau dihapus via tombol 🔐 NS, sistem otomatis membuat atau menghapus `RoleBinding` di cluster tanpa perlu download ulang kubeconfig. Kubeconfig yang sudah ada langsung berlaku untuk namespace baru.
 - Untuk user yang login sendiri, endpoint `GET /api/k0s/clusters/{id}/my-kubeconfig` otomatis menentukan scope berdasarkan identitas login (admin mendapat kubeconfig full cluster-admin, user biasa mendapat SA-scoped kubeconfig).
 
 ## 🛠️ Teknologi yang Digunakan

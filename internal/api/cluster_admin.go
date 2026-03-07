@@ -1519,6 +1519,299 @@ users:
 `, clusterBlock, username, namespace, contextName, contextName, username, token)
 }
 
+// ensureCustomClusterRoles applies the two managed ClusterRoles to the cluster.
+// These define the exact permissions for dm-k8s-view and dm-k8s-full users.
+// Using kubectl apply so it is safe to call multiple times (idempotent).
+func ensureCustomClusterRoles(kubeconfigPath string) {
+	viewRole := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dm-k8s-view
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+rules:
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "services", "configmaps",
+              "persistentvolumes", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch"]
+`
+	fullRole := `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: dm-k8s-full
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["pods/exec", "pods/portforward"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["services", "configmaps", "secrets", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+`
+	for name, yaml := range map[string]string{"dm-k8s-view": viewRole, "dm-k8s-full": fullRole} {
+		if err := applyYAMLViaKubeconfig(kubeconfigPath, yaml); err != nil {
+			log.Printf("[RBAC] Warning: could not apply ClusterRole %s: %v", name, err)
+		}
+	}
+}
+
+// SyncUserRBAC idempotently creates/updates the ServiceAccount + RoleBindings for
+// all newNamespaces and deletes RoleBindings for removedNamespaces.
+// It is called automatically when namespace assignments change so the existing
+// kubeconfig stays valid without requiring a re-download.
+func SyncUserRBAC(adminKC, targetUsername, targetRole string, newNamespaces []string, removedNamespaces []string) error {
+	tmpKC, err := os.CreateTemp("", "admin-kc-sync-*.yaml")
+	if err != nil {
+		return fmt.Errorf("temp file: %v", err)
+	}
+	defer os.Remove(tmpKC.Name())
+	tmpKC.WriteString(adminKC)
+	tmpKC.Close()
+
+	saName := "dm-" + sanitizeSAName(targetUsername)
+
+	// SA always lives in 'default' so its identity (system:serviceaccount:default:dm-<name>)
+	// never changes when namespace assignments are updated. RoleBindings in any namespace
+	// can reference an SA from a different namespace.
+	saNs := "default"
+
+	// ServiceAccount (idempotent)
+	saYAML := fmt.Sprintf(`apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+`, saName, saNs)
+	if err := applyYAMLViaKubeconfig(tmpKC.Name(), saYAML); err != nil {
+		return fmt.Errorf("SA apply: %v", err)
+	}
+
+	// Token Secret (idempotent)
+	secretName := saName + "-token"
+	secretYAML := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+  annotations:
+    kubernetes.io/service-account.name: %s
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+type: kubernetes.io/service-account-token
+`, secretName, saNs, saName)
+	if err := applyYAMLViaKubeconfig(tmpKC.Name(), secretYAML); err != nil {
+		log.Printf("[SyncUserRBAC] Warning: Secret apply: %v", err)
+	}
+
+	isAdminRole := strings.Contains(targetRole, "admin")
+	isFullRole := strings.Contains(targetRole, "user_k8s_full")
+
+	if isAdminRole {
+		crbYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dm-%s-cluster-admin
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+subjects:
+- kind: ServiceAccount
+  name: %s
+  namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+`, saName, saName, saNs)
+		if err := applyYAMLViaKubeconfig(tmpKC.Name(), crbYAML); err != nil {
+			log.Printf("[SyncUserRBAC] Warning: ClusterRoleBinding: %v", err)
+		}
+	} else {
+		// Ensure our custom ClusterRoles exist in the cluster
+		ensureCustomClusterRoles(tmpKC.Name())
+
+		clusterRoleName := "dm-k8s-view"
+		if isFullRole {
+			clusterRoleName = "dm-k8s-full"
+		}
+		// Apply RoleBindings for all current namespaces.
+		// RoleBinding roleRef is immutable — always delete first then recreate
+		// so a role change (view→full) is picked up immediately.
+		for _, ns := range newNamespaces {
+			rbName := fmt.Sprintf("dm-%s-binding", saName)
+			kubectlRun(tmpKC.Name(), "delete", "rolebinding", rbName, "-n", ns, "--ignore-not-found") //nolint:errcheck
+			rbYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+subjects:
+- kind: ServiceAccount
+  name: %s
+  namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: %s
+  apiGroup: rbac.authorization.k8s.io
+`, rbName, ns, saName, saNs, clusterRoleName)
+			if err := applyYAMLViaKubeconfig(tmpKC.Name(), rbYAML); err != nil {
+				log.Printf("[SyncUserRBAC] Warning: RoleBinding ns=%s: %v", ns, err)
+			}
+		}
+		// Delete RoleBindings for namespaces that were removed
+		for _, ns := range removedNamespaces {
+			if _, delErr := kubectlRun(tmpKC.Name(), "delete", "rolebinding",
+				fmt.Sprintf("dm-%s-binding", saName), "-n", ns, "--ignore-not-found"); delErr != nil {
+				log.Printf("[SyncUserRBAC] Warning: delete RoleBinding ns=%s: %v", ns, delErr)
+			}
+		}
+	}
+
+	log.Printf("[SyncUserRBAC] Synced RBAC user=%s sa=%s role=%s added=%v removed=%v",
+		targetUsername, saName, clusterRoleName(targetRole), newNamespaces, removedNamespaces)
+	return nil
+}
+
+// clusterRoleName returns the ClusterRole name for a given docker-manager role string.
+func clusterRoleName(role string) string {
+	if strings.Contains(role, "admin") {
+		return "cluster-admin"
+	}
+	if strings.Contains(role, "user_k8s_full") {
+		return "dm-k8s-full"
+	}
+	return "dm-k8s-view"
+}
+
+// TriggerRBACSync looks up the user and cluster kubeconfig from the DB, then
+// calls SyncUserRBAC asynchronously. Safe to call in a goroutine.
+func TriggerRBACSync(userID string, clusterID int, newNamespaces []string, removedNamespaces []string) {
+	var username, role string
+	if err := database.DB.QueryRow(
+		"SELECT username, role FROM users WHERE id = ?", userID,
+	).Scan(&username, &role); err != nil {
+		log.Printf("[RBACSync] Cannot load user %s: %v", userID, err)
+		return
+	}
+
+	var storedKC sql.NullString
+	if err := database.DB.QueryRow(
+		"SELECT kubeconfig FROM k0s_clusters WHERE id = ?", clusterID,
+	).Scan(&storedKC); err != nil || !storedKC.Valid || storedKC.String == "" {
+		log.Printf("[RBACSync] No kubeconfig for cluster %d — skipping RBAC sync", clusterID)
+		return
+	}
+
+	if err := SyncUserRBAC(storedKC.String, username, role, newNamespaces, removedNamespaces); err != nil {
+		log.Printf("[RBACSync] Error syncing RBAC for user %s: %v", username, err)
+	}
+}
+
+// TriggerRBACResyncForUser re-syncs RBAC for all clusters a user has access to.
+// Called when the user's role changes so RoleBindings immediately reflect the new permissions.
+type rbacSyncEntry struct {
+	clusterID  int
+	kubeconfig string
+	namespaces []string
+}
+
+func TriggerRBACResyncForUser(userID, newRole string) {
+	// Collect all data in one DB transaction block, then release the connection
+	// before running kubectl (which can take several seconds). This prevents the
+	// single SQLite connection from being held during kubectl, which would block
+	// concurrent API calls such as ListUsers.
+	var username string
+	if err := database.DB.QueryRow(
+		"SELECT username FROM users WHERE id = ?", userID,
+	).Scan(&username); err != nil {
+		log.Printf("[RBACResync] Cannot load user %s: %v", userID, err)
+		return
+	}
+
+	// --- Phase 1: gather all cluster/namespace data while holding DB connection ---
+	var entries []rbacSyncEntry
+
+	rows, err := database.DB.Query(
+		"SELECT DISTINCT cluster_id FROM user_namespaces WHERE user_id = ?", userID,
+	)
+	if err != nil {
+		log.Printf("[RBACResync] Cannot query clusters for user %s: %v", userID, err)
+		return
+	}
+	var clusterIDs []int
+	for rows.Next() {
+		var cid int
+		if rows.Scan(&cid) == nil {
+			clusterIDs = append(clusterIDs, cid)
+		}
+	}
+	rows.Close()
+
+	for _, clusterID := range clusterIDs {
+		var storedKC sql.NullString
+		if err := database.DB.QueryRow(
+			"SELECT kubeconfig FROM k0s_clusters WHERE id = ?", clusterID,
+		).Scan(&storedKC); err != nil || !storedKC.Valid || storedKC.String == "" {
+			continue
+		}
+		nsRows, err := database.DB.Query(
+			"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
+			userID, clusterID,
+		)
+		if err != nil {
+			continue
+		}
+		var namespaces []string
+		for nsRows.Next() {
+			var ns string
+			nsRows.Scan(&ns) //nolint:errcheck
+			namespaces = append(namespaces, ns)
+		}
+		nsRows.Close()
+		entries = append(entries, rbacSyncEntry{clusterID: clusterID, kubeconfig: storedKC.String, namespaces: namespaces})
+	}
+
+	// --- Phase 2: run kubectl operations with no DB connection held ---
+	for _, e := range entries {
+		log.Printf("[RBACResync] Re-syncing cluster %d for user %s (new role: %s)",
+			e.clusterID, username, newRole)
+		if err := SyncUserRBAC(e.kubeconfig, username, newRole, e.namespaces, nil); err != nil {
+			log.Printf("[RBACResync] Error cluster %d user %s: %v", e.clusterID, username, err)
+		}
+	}
+}
+
 // generateSAKubeconfigContent is the core logic that creates a ServiceAccount + RBAC
 // in the cluster and returns the resulting kubeconfig YAML string.
 // adminKC is the raw admin kubeconfig content. namespaces is the list of namespaces
@@ -1536,11 +1829,11 @@ func generateSAKubeconfigContent(adminKC, targetUsername, targetRole string, nam
 	// Sanitize ServiceAccount name: dm-<username>
 	saName := "dm-" + sanitizeSAName(targetUsername)
 
-	// Determine the namespace that will host the ServiceAccount itself
+	// Always place the SA in the 'default' namespace so its identity
+	// (system:serviceaccount:default:dm-<name>) stays stable across
+	// namespace assignment changes. RoleBindings in other namespaces
+	// reference it by namespace, so this SA must never move.
 	saNs := "default"
-	if len(namespaces) > 0 {
-		saNs = namespaces[0]
-	}
 
 	// Apply ServiceAccount (idempotent via kubectl apply)
 	saYAML := fmt.Sprintf(`apiVersion: v1
@@ -1574,7 +1867,6 @@ type: kubernetes.io/service-account-token
 
 	// Apply RBAC based on role
 	isAdminRole := strings.Contains(targetRole, "admin")
-	isFullRole := strings.Contains(targetRole, "user_k8s_full")
 
 	if isAdminRole {
 		// ClusterRoleBinding → cluster-admin (full cluster access)
@@ -1597,16 +1889,17 @@ roleRef:
 			log.Printf("[SAKubeconfig] Warning: ClusterRoleBinding error: %v", err)
 		}
 	} else if len(namespaces) > 0 {
-		// RoleBinding per assigned namespace using built-in ClusterRoles
-		clusterRoleName := "view"
-		if isFullRole {
-			clusterRoleName = "admin"
-		}
+		// Ensure custom ClusterRoles exist, then create RoleBindings per namespace.
+		// Delete before recreate to handle roleRef immutability on role changes.
+		ensureCustomClusterRoles(tmpKC.Name())
+		crName := clusterRoleName(targetRole)
 		for _, ns := range namespaces {
+			rbName := fmt.Sprintf("dm-%s-binding", saName)
+			kubectlRun(tmpKC.Name(), "delete", "rolebinding", rbName, "-n", ns, "--ignore-not-found") //nolint:errcheck
 			rbYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: dm-%s-binding
+  name: %s
   namespace: %s
   labels:
     app.kubernetes.io/managed-by: docker-manager
@@ -1618,7 +1911,7 @@ roleRef:
   kind: ClusterRole
   name: %s
   apiGroup: rbac.authorization.k8s.io
-`, saName, ns, saName, saNs, clusterRoleName)
+`, rbName, ns, saName, saNs, crName)
 			if err := applyYAMLViaKubeconfig(tmpKC.Name(), rbYAML); err != nil {
 				log.Printf("[SAKubeconfig] Warning: RoleBinding error for ns=%s: %v", ns, err)
 			}
