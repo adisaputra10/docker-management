@@ -865,7 +865,7 @@ func GetClusterResources(w http.ResponseWriter, r *http.Request) {
 		"ingresses": true, "configmaps": true, "secrets": true,
 		"persistentvolumeclaims": true, "replicasets": true,
 		"statefulsets": true, "daemonsets": true, "jobs": true, "cronjobs": true,
-		"nodes": true,
+		"nodes": true, "events": true,
 	}
 	if !allowed[resource] {
 		http.Error(w, "resource not allowed", http.StatusBadRequest)
@@ -1532,7 +1532,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["pods", "pods/log", "services", "configmaps",
-              "persistentvolumes", "persistentvolumeclaims"]
+              "persistentvolumes", "persistentvolumeclaims", "events"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]
@@ -1565,6 +1565,9 @@ rules:
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 - apiGroups: [""]
   resources: ["persistentvolumes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["events"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["apps"]
   resources: ["deployments", "daemonsets", "replicasets", "statefulsets"]

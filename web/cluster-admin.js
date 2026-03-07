@@ -573,34 +573,36 @@ function renderPods(items) {
 
 /* EVENTS */
 function renderEvents(items) {
-    const rows = items.map(e => {
-        const name = e.metadata.name || '—';
-        const ns = e.metadata.namespace || '—';
+    // Sort newest first by lastTimestamp
+    const sorted = [...items].sort((a, b) => {
+        const ta = new Date(a.lastTimestamp || a.eventTime || 0).getTime();
+        const tb = new Date(b.lastTimestamp || b.eventTime || 0).getTime();
+        return tb - ta;
+    });
+    const rows = sorted.map(e => {
         const involvedObj = e.involvedObject || {};
-        const objType = involvedObj.kind || '—';
+        const objKind = (involvedObj.kind || '').toLowerCase();
         const objName = involvedObj.name || '—';
+        const object = objKind && objName !== '—' ? `${objKind}/${objName}` : objName;
         const reason = e.reason || '—';
         const message = e.message || '—';
         const type = e.type || 'Normal';
-        const msgPreview = message.length > 60 ? message.substring(0, 60) + '...' : message;
         const typeColor = type === 'Warning' ? '#f59e0b' : (type === 'Error' ? '#ef4444' : '#10b981');
+        const lastSeen = age(e.lastTimestamp || e.eventTime);
+        const escapedMsg = message.replace(/"/g, '&quot;').replace(/</g, '&lt;');
         return `<tr>
-            <td><strong>${name}</strong></td>
-            <td><span style="color:#64748b;font-size:0.75rem">${ns}</span></td>
-            <td>${objType}</td>
-            <td><strong>${objName}</strong></td>
-            <td><span style="color:${typeColor};font-weight:500">${type}</span></td>
+            <td style="color:#94a3b8;white-space:nowrap">${lastSeen}</td>
+            <td><span style="color:${typeColor};font-weight:600">${type}</span></td>
             <td><strong>${reason}</strong></td>
-            <td title="${message}" style="max-width:250px;overflow:hidden;text-overflow:ellipsis;color:#94a3b8">${msgPreview}</td>
-            <td style="color:#64748b">${age(e.lastTimestamp)}</td>
+            <td style="color:#7dd3fc;font-size:0.82rem">${object}</td>
+            <td title="${escapedMsg}" style="color:#cbd5e1;max-width:380px;white-space:normal;line-height:1.4">${message}</td>
         </tr>`;
     }).join('');
     return `<table class="resource-table">
         <thead><tr>
-            <th>Name</th><th>Namespace</th><th>Type</th><th>Object</th>
-            <th>Event Type</th><th>Reason</th><th>Message</th><th>Age</th>
+            <th>LAST SEEN</th><th>TYPE</th><th>REASON</th><th>OBJECT</th><th>MESSAGE</th>
         </tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:#64748b">No events</td></tr>'}</tbody>
     </table>`;
 }
 
