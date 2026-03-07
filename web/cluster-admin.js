@@ -893,6 +893,7 @@ function renderUsers(items) {
             <td>
                 <div style="display:flex;gap:0.3rem;flex-wrap:wrap;">
                     <button class="btn btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem" onclick='showAssignNsModal(${uid}, "${uname}")' title="Assign namespaces">🔐 NS</button>
+                    <button class="btn btn-ghost" style="padding:0.2rem 0.6rem;font-size:0.75rem;background:#2d1b69;color:#a78bfa" onclick='downloadUserSAKubeconfig(${uid}, "${uname}")' title="Download ServiceAccount Kubeconfig">📥 Kubeconfig</button>
                 </div>
             </td>
         </tr>
@@ -1226,6 +1227,36 @@ function showUserNsModal(userId, username) {
         .catch(() => {
             document.getElementById('user-ns-list').innerHTML = '<div style="padding:1rem;text-align:center;color:#f87171;">Failed to load</div>';
         });
+}
+
+// Download ServiceAccount-based kubeconfig for a user
+async function downloadUserSAKubeconfig(userId, username) {
+    try {
+        const res = await fetch(`${API_BASE}/k0s/clusters/${state.clusterId}/users/${userId}/sa-kubeconfig`, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            }
+        });
+
+        if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(txt || `HTTP ${res.status}`);
+        }
+
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `kubeconfig-${username}.yaml`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        alert(`✓ Kubeconfig berhasil dibuat!\n\nFile: kubeconfig-${username}.yaml\n\nFile ini menggunakan ServiceAccount dengan akses sesuai role dan namespace yang sudah ditetapkan.\n\nGunakan dengan:\nkubectl --kubeconfig=kubeconfig-${username}.yaml get pods`);
+    } catch (e) {
+        alert('⚠️ Error generating kubeconfig: ' + e.message);
+    }
 }
 
 /* Generic fallback */

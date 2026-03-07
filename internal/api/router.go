@@ -46,14 +46,7 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/containers/{id}/remove", removeContainer).Methods("DELETE")
 	api.HandleFunc("/containers/{id}/rename", renameContainer).Methods("POST")
 	api.HandleFunc("/containers/{id}/inspect", inspectContainer).Methods("GET")
-	api.HandleFunc("/containers/{id}/logs", getContainerLogs).Methods("GET")
 	api.HandleFunc("/containers/{id}/exec", execContainer).Methods("GET") // WebSocket
-
-	// Compose stacks
-	api.HandleFunc("/compose/deploy", deployComposeStack).Methods("POST")
-	api.HandleFunc("/compose/{project}/stop", stopComposeStack).Methods("POST")
-	api.HandleFunc("/compose/{project}/remove", removeComposeStack).Methods("DELETE")
-
 
 	// Images
 	api.HandleFunc("/images", listImages).Methods("GET")
@@ -119,6 +112,8 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/k0s/clusters/{id}/nodes", GetClusterNodes).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/kubeconfig", DownloadKubeconfig).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/kubeconfig-status", GetKubeconfigStatus).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/my-kubeconfig", DownloadMyKubeconfig).Methods("GET")
+	api.HandleFunc("/k0s/clusters/{id}/users/{userId}/sa-kubeconfig", GenerateUserServiceAccountKubeconfig).Methods("GET")
 	api.HandleFunc("/k0s/import", ImportK0sCluster).Methods("POST")
 	api.HandleFunc("/k0s/clusters/{id}/kubeconfig-update", UpdateClusterKubeconfig).Methods("PUT")
 	api.HandleFunc("/k0s/test-connection", TestK0sConnection).Methods("POST")

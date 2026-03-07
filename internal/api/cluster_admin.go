@@ -1447,6 +1447,341 @@ func GetPodDescribe(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(output))
 }
 
+// ── ServiceAccount Kubeconfig Generation ─────────────────────────────────────
+
+// sanitizeSAName converts a username into a valid Kubernetes resource name:
+// lowercase alphanumeric + dash only, trimmed, max 53 characters.
+func sanitizeSAName(name string) string {
+	name = strings.ToLower(name)
+	var sb strings.Builder
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' {
+			sb.WriteRune(c)
+		} else {
+			sb.WriteRune('-')
+		}
+	}
+	result := strings.Trim(sb.String(), "-")
+	if result == "" {
+		result = "user"
+	}
+	if len(result) > 53 {
+		result = result[:53]
+	}
+	return result
+}
+
+// applyYAMLViaKubeconfig writes yamlContent to a temp file and runs kubectl apply.
+func applyYAMLViaKubeconfig(kubeconfigPath, yamlContent string) error {
+	tmpYAML, err := os.CreateTemp("", "k8s-manifest-*.yaml")
+	if err != nil {
+		return fmt.Errorf("create temp yaml: %v", err)
+	}
+	defer os.Remove(tmpYAML.Name())
+	if _, err := tmpYAML.WriteString(yamlContent); err != nil {
+		tmpYAML.Close()
+		return err
+	}
+	tmpYAML.Close()
+	out, err := kubectlRun(kubeconfigPath, "apply", "-f", tmpYAML.Name())
+	if err != nil {
+		return fmt.Errorf("kubectl apply: %v — %s", err, out)
+	}
+	return nil
+}
+
+// buildSAKubeconfigYAML constructs a kubeconfig YAML for a ServiceAccount token.
+func buildSAKubeconfigYAML(server, caData, username, token, namespace string) string {
+	contextName := username + "@cluster"
+	var clusterBlock string
+	if caData != "" {
+		clusterBlock = fmt.Sprintf("    server: %s\n    certificate-authority-data: %s", server, caData)
+	} else {
+		clusterBlock = fmt.Sprintf("    server: %s\n    insecure-skip-tls-verify: true", server)
+	}
+	return fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+%s
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    user: %s
+    namespace: %s
+  name: %s
+current-context: %s
+users:
+- name: %s
+  user:
+    token: %s
+`, clusterBlock, username, namespace, contextName, contextName, username, token)
+}
+
+// generateSAKubeconfigContent is the core logic that creates a ServiceAccount + RBAC
+// in the cluster and returns the resulting kubeconfig YAML string.
+// adminKC is the raw admin kubeconfig content. namespaces is the list of namespaces
+// the user is allowed to access (empty = no RoleBinding, SA only).
+func generateSAKubeconfigContent(adminKC, targetUsername, targetRole string, namespaces []string) (string, error) {
+	// Write admin kubeconfig to a temp file for kubectl operations
+	tmpKC, err := os.CreateTemp("", "admin-kc-*.yaml")
+	if err != nil {
+		return "", fmt.Errorf("unable to create temp file: %v", err)
+	}
+	defer os.Remove(tmpKC.Name())
+	tmpKC.WriteString(adminKC)
+	tmpKC.Close()
+
+	// Sanitize ServiceAccount name: dm-<username>
+	saName := "dm-" + sanitizeSAName(targetUsername)
+
+	// Determine the namespace that will host the ServiceAccount itself
+	saNs := "default"
+	if len(namespaces) > 0 {
+		saNs = namespaces[0]
+	}
+
+	// Apply ServiceAccount (idempotent via kubectl apply)
+	saYAML := fmt.Sprintf(`apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: %s
+  namespace: %s
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+`, saName, saNs)
+	if err := applyYAMLViaKubeconfig(tmpKC.Name(), saYAML); err != nil {
+		return "", fmt.Errorf("creating ServiceAccount: %v", err)
+	}
+
+	// Apply a long-lived token Secret (compatible with all K8s / k0s versions)
+	secretName := saName + "-token"
+	secretYAML := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: %s
+  namespace: %s
+  annotations:
+    kubernetes.io/service-account.name: %s
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+type: kubernetes.io/service-account-token
+`, secretName, saNs, saName)
+	if err := applyYAMLViaKubeconfig(tmpKC.Name(), secretYAML); err != nil {
+		return "", fmt.Errorf("creating token secret: %v", err)
+	}
+
+	// Apply RBAC based on role
+	isAdminRole := strings.Contains(targetRole, "admin")
+	isFullRole := strings.Contains(targetRole, "user_k8s_full")
+
+	if isAdminRole {
+		// ClusterRoleBinding → cluster-admin (full cluster access)
+		crbYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dm-%s-cluster-admin
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+subjects:
+- kind: ServiceAccount
+  name: %s
+  namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io
+`, saName, saName, saNs)
+		if err := applyYAMLViaKubeconfig(tmpKC.Name(), crbYAML); err != nil {
+			log.Printf("[SAKubeconfig] Warning: ClusterRoleBinding error: %v", err)
+		}
+	} else if len(namespaces) > 0 {
+		// RoleBinding per assigned namespace using built-in ClusterRoles
+		clusterRoleName := "view"
+		if isFullRole {
+			clusterRoleName = "admin"
+		}
+		for _, ns := range namespaces {
+			rbYAML := fmt.Sprintf(`apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dm-%s-binding
+  namespace: %s
+  labels:
+    app.kubernetes.io/managed-by: docker-manager
+subjects:
+- kind: ServiceAccount
+  name: %s
+  namespace: %s
+roleRef:
+  kind: ClusterRole
+  name: %s
+  apiGroup: rbac.authorization.k8s.io
+`, saName, ns, saName, saNs, clusterRoleName)
+			if err := applyYAMLViaKubeconfig(tmpKC.Name(), rbYAML); err != nil {
+				log.Printf("[SAKubeconfig] Warning: RoleBinding error for ns=%s: %v", ns, err)
+			}
+		}
+	}
+
+	// Wait for the token controller to populate the Secret
+	time.Sleep(3 * time.Second)
+
+	// Retrieve the base64-encoded token from the Secret
+	tokenB64, err := kubectlRun(tmpKC.Name(), "get", "secret", secretName, "-n", saNs,
+		"-o", "jsonpath={.data.token}")
+	if err != nil || strings.TrimSpace(tokenB64) == "" {
+		return "", fmt.Errorf("ServiceAccount token not ready — please try again in a moment")
+	}
+	tokenBytes, err := base64.StdEncoding.DecodeString(strings.TrimSpace(tokenB64))
+	if err != nil {
+		return "", fmt.Errorf("decoding ServiceAccount token: %v", err)
+	}
+	token := string(tokenBytes)
+
+	// Extract server URL and CA from the admin kubeconfig
+	server, _ := kubectlRun(tmpKC.Name(), "config", "view", "--raw", "-o",
+		"jsonpath={.clusters[0].cluster.server}")
+	caData, _ := kubectlRun(tmpKC.Name(), "config", "view", "--raw", "-o",
+		"jsonpath={.clusters[0].cluster.certificate-authority-data}")
+	server = strings.TrimSpace(server)
+	caData = strings.TrimSpace(caData)
+
+	log.Printf("[SAKubeconfig] Generated kubeconfig for user=%s (sa=%s, ns=%s, role=%s)",
+		targetUsername, saName, saNs, targetRole)
+	return buildSAKubeconfigYAML(server, caData, targetUsername, token, saNs), nil
+}
+
+// getUserNamespacesForCluster fetches namespace assignments for a user+cluster from DB.
+func getUserNamespacesForCluster(userID, clusterID string) ([]string, error) {
+	rows, err := database.DB.Query(
+		"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ? ORDER BY namespace",
+		userID, clusterID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ns []string
+	for rows.Next() {
+		var n string
+		rows.Scan(&n)
+		ns = append(ns, n)
+	}
+	return ns, nil
+}
+
+// GenerateUserServiceAccountKubeconfig creates (idempotently) a ServiceAccount + RBAC
+// for a specific docker-manager user (admin-only), then returns a kubeconfig.
+// GET /api/k0s/clusters/{id}/users/{userId}/sa-kubeconfig
+func GenerateUserServiceAccountKubeconfig(w http.ResponseWriter, r *http.Request) {
+	requester, success := GetUserFromContext(r.Context())
+	if !success || !HasRole(requester.Role, "admin") {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	vars := mux.Vars(r)
+	clusterID := vars["id"]
+	targetUserID := vars["userId"]
+
+	var storedKC sql.NullString
+	if err := database.DB.QueryRow(
+		"SELECT COALESCE(kubeconfig,'') FROM k0s_clusters WHERE id = ?", clusterID,
+	).Scan(&storedKC); err != nil {
+		http.Error(w, "Cluster not found", http.StatusNotFound)
+		return
+	}
+	if strings.TrimSpace(storedKC.String) == "" {
+		http.Error(w, "Cluster kubeconfig not available — fetch or import it first", http.StatusBadRequest)
+		return
+	}
+
+	var targetUsername, targetRole string
+	if err := database.DB.QueryRow(
+		"SELECT username, role FROM users WHERE id = ?", targetUserID,
+	).Scan(&targetUsername, &targetRole); err != nil {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	namespaces, err := getUserNamespacesForCluster(targetUserID, clusterID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	userKC, err := generateSAKubeconfigContent(storedKC.String, targetUsername, targetRole, namespaces)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kubeconfig-%s.yaml"`, targetUsername))
+	w.Write([]byte(userKC))
+}
+
+// DownloadMyKubeconfig returns a kubeconfig scoped to the currently logged-in user.
+//   - admin role → returns the stored cluster admin kubeconfig as-is
+//   - any other role → creates/updates a ServiceAccount for that user and returns a
+//     namespace-scoped kubeconfig matching their assigned namespaces and role
+//
+// GET /api/k0s/clusters/{id}/my-kubeconfig
+func DownloadMyKubeconfig(w http.ResponseWriter, r *http.Request) {
+	me, success := GetUserFromContext(r.Context())
+	if !success {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	vars := mux.Vars(r)
+	clusterID := vars["id"]
+
+	// Always need the stored admin kubeconfig (as the base / to run kubectl)
+	var storedKC sql.NullString
+	if err := database.DB.QueryRow(
+		"SELECT COALESCE(kubeconfig,'') FROM k0s_clusters WHERE id = ?", clusterID,
+	).Scan(&storedKC); err != nil {
+		http.Error(w, "Cluster not found", http.StatusNotFound)
+		return
+	}
+	if strings.TrimSpace(storedKC.String) == "" {
+		http.Error(w, "Cluster kubeconfig not available yet — please wait for provisioning", http.StatusBadRequest)
+		return
+	}
+
+	// Admin gets the raw admin kubeconfig directly
+	if HasRole(me.Role, "admin") {
+		log.Printf("[MyKubeconfig] Admin %s downloading cluster admin kubeconfig for cluster %s", me.Username, clusterID)
+		var clusterName string
+		database.DB.QueryRow("SELECT name FROM k0s_clusters WHERE id = ?", clusterID).Scan(&clusterName)
+		w.Header().Set("Content-Type", "application/x-yaml")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kubeconfig-%s.yaml"`, clusterName))
+		w.Write([]byte(storedKC.String))
+		return
+	}
+
+	// Non-admin: generate a ServiceAccount kubeconfig scoped to their namespaces
+	userIDStr := strconv.Itoa(me.ID)
+	namespaces, err := getUserNamespacesForCluster(userIDStr, clusterID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	userKC, err := generateSAKubeconfigContent(storedKC.String, me.Username, me.Role, namespaces)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kubeconfig-%s.yaml"`, me.Username))
+	w.Write([]byte(userKC))
+}
+
 // GetPodEvents returns events related to a pod
 func GetPodEvents(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)

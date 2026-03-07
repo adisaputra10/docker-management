@@ -547,22 +547,33 @@ function enterCluster(clusterId, clusterName) {
 
 async function downloadK0sKubeconfig(clusterId, clusterName) {
     try {
-        // First check if kubeconfig is available
-        const statusResponse = await fetch(`${API_BASE}/k0s/clusters/${clusterId}/kubeconfig-status`);
+        // Check if kubeconfig is available first
+        const statusResponse = await fetch(`${API_BASE}/k0s/clusters/${clusterId}/kubeconfig-status`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
         const statusData = await statusResponse.json();
-        
-        console.log('Kubeconfig status:', statusData);
-        
+
         if (!statusData.kubeconfig_available) {
             alert(`⚠️ Kubeconfig sedang disiapkan untuk cluster "${clusterName}"\n\nStatus: ${statusData.status}\n\nSilahkan coba lagi dalam beberapa saat.`);
             return;
         }
 
-        // Now download the kubeconfig
-        const response = await fetch(`${API_BASE}/k0s/clusters/${clusterId}/kubeconfig`);
-        
+        const userData = JSON.parse(localStorage.getItem('userData') || '{}');
+        const isAdmin = userData.role === 'admin';
+
+        if (!isAdmin) {
+            alert('⏳ Membuat ServiceAccount untuk user Anda...\nProses ini memerlukan beberapa detik.');
+        }
+
+        // Always call /my-kubeconfig — backend returns admin kubeconfig for admin,
+        // or a ServiceAccount-scoped kubeconfig for regular users.
+        const response = await fetch(`${API_BASE}/k0s/clusters/${clusterId}/my-kubeconfig`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
+
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            const txt = await response.text();
+            throw new Error(txt || `HTTP ${response.status}`);
         }
 
         const blob = await response.blob();
@@ -574,9 +585,11 @@ async function downloadK0sKubeconfig(clusterId, clusterName) {
         a.click();
         window.URL.revokeObjectURL(url);
         document.body.removeChild(a);
-        
-        // Show success message
-        alert(`✓ Kubeconfig berhasil didownload!\n\nFile: kubeconfig-${clusterName}.yaml\n\nGunakan dengan: kubectl --kubeconfig=kubeconfig-${clusterName}.yaml get pods`);
+
+        const scopeNote = isAdmin
+            ? 'Kubeconfig ini memiliki akses penuh (cluster-admin).'
+            : 'Kubeconfig ini dibatasi sesuai namespace dan role Anda.';
+        alert(`✓ Kubeconfig berhasil didownload!\n\nFile: kubeconfig-${clusterName}.yaml\n${scopeNote}\n\nGunakan dengan: kubectl --kubeconfig=kubeconfig-${clusterName}.yaml get pods`);
     } catch (error) {
         console.error('Kubeconfig error:', error);
         alert('⚠️ Error downloading kubeconfig: ' + error.message + '\n\nCluster mungkin masih initializing. Silahkan tunggu beberapa saat.');
