@@ -523,6 +523,15 @@ async function loadSSOSettings() {
         document.getElementById('sso-entra-client-id').value = s.entra_client_id || '';
         document.getElementById('sso-entra-client-secret').value = s.entra_client_secret || '';
         document.getElementById('sso-entra-redirect-uri').value = s.entra_redirect_uri || '';
+
+        document.getElementById('sso-oidc-enabled').checked = s.oidc_enabled;
+        document.getElementById('sso-oidc-display-name').value = s.oidc_display_name || '';
+        document.getElementById('sso-oidc-issuer').value = s.oidc_issuer || '';
+        document.getElementById('sso-oidc-client-id').value = s.oidc_client_id || '';
+        document.getElementById('sso-oidc-client-secret').value = s.oidc_client_secret || '';
+        document.getElementById('sso-oidc-redirect-uri').value = s.oidc_redirect_uri || '';
+        document.getElementById('sso-oidc-default-role').value = s.oidc_default_role || 'user_docker_basic';
+        document.getElementById('sso-oidc-scopes').value = s.oidc_scopes || 'openid profile email';
     } catch (e) {
         // Assume first run, no settings. Silent fail or log.
         console.warn('SSO settings load error', e);
@@ -533,8 +542,6 @@ async function saveSSOSettings() {
     const data = {
         standard_login_enabled: document.getElementById('standard-login-enabled').checked,
         gitlab_enabled: document.getElementById('sso-gitlab-enabled').checked,
-
-        gitlab_enabled: document.getElementById('sso-gitlab-enabled').checked,
         gitlab_client_id: document.getElementById('sso-gitlab-client-id').value,
         gitlab_client_secret: document.getElementById('sso-gitlab-client-secret').value,
         gitlab_redirect_uri: document.getElementById('sso-gitlab-redirect-uri').value,
@@ -543,7 +550,16 @@ async function saveSSOSettings() {
         entra_tenant_id: document.getElementById('sso-entra-tenant-id').value,
         entra_client_id: document.getElementById('sso-entra-client-id').value,
         entra_client_secret: document.getElementById('sso-entra-client-secret').value,
-        entra_redirect_uri: document.getElementById('sso-entra-redirect-uri').value
+        entra_redirect_uri: document.getElementById('sso-entra-redirect-uri').value,
+
+        oidc_enabled: document.getElementById('sso-oidc-enabled').checked,
+        oidc_display_name: document.getElementById('sso-oidc-display-name').value,
+        oidc_issuer: document.getElementById('sso-oidc-issuer').value,
+        oidc_client_id: document.getElementById('sso-oidc-client-id').value,
+        oidc_client_secret: document.getElementById('sso-oidc-client-secret').value,
+        oidc_redirect_uri: document.getElementById('sso-oidc-redirect-uri').value,
+        oidc_default_role: document.getElementById('sso-oidc-default-role').value,
+        oidc_scopes: document.getElementById('sso-oidc-scopes').value
     };
 
     try {

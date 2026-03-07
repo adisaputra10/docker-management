@@ -133,6 +133,15 @@
             background: #106ebe;
         }
 
+        .btn-oidc {
+            background: #6366f1;
+            border-color: #6366f1;
+        }
+
+        .btn-oidc:hover {
+            background: #4f46e5;
+        }
+
         .divider {
             display: flex;
             align-items: center;
@@ -224,6 +233,17 @@
                     btn.className = 'btn-sso btn-entra';
                     btn.innerHTML = `<svg viewBox="0 0 23 23" width="20" height="20" fill="currentColor" style="margin-right: 8px"><path d="M0 0h11v11H0zM12 0h11v11H12zM0 12h11v11H0zM12 12h11v11H12z"/></svg> Sign in with Microsoft`;
                     btn.onclick = () => alert('Microsoft Entra ID SSO backend not implemented yet (Placeholder)');
+                    container.appendChild(btn);
+                }
+
+                if (data.oidc && data.oidc.enabled) {
+                    has = true;
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'btn-sso btn-oidc';
+                    const name = data.oidc.display_name || 'SSO';
+                    btn.innerHTML = `🔑 Sign in with ${name}`;
+                    btn.onclick = () => { window.location.href = '/api/auth/oidc/begin'; };
                     container.appendChild(btn);
                 }
 

@@ -15,6 +15,8 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/auth/login", LoginHandler).Methods("POST")
 	api.HandleFunc("/auth/logout", LogoutHandler).Methods("POST")
 	api.HandleFunc("/auth/providers", GetAuthProviders).Methods("GET")
+	api.HandleFunc("/auth/oidc/begin", OIDCBeginAuth).Methods("GET")
+	api.HandleFunc("/auth/oidc/callback", OIDCCallback).Methods("GET")
 
 	// Users
 	api.HandleFunc("/users", ListUsers).Methods("GET")

@@ -2,54 +2,27 @@
 
 **Docker Manager** adalah aplikasi web modern dan ringan untuk mengelola container Docker Anda dengan mudah. Dibangun dengan backend Go (Golang) yang cepat dan frontend Vanilla JS yang responsif, aplikasi ini menawarkan pengalaman manajemen Docker yang intuitif tanpa bloatware.
 
-![Docker Dashboard](web/screenshots/dashboard.png)
+![Docker Dashboard](web/image1.png)
 
 ## ✨ Fitur Utama
 
 ### 🖥️ Dashboard Futuristik
 - **Glassmorphism UI:** Tampilan modern dengan efek transparansi dan animasi halus.
 - **Real-time Monitoring:** Pantau status container (Running/Stopped), jumlah image, volume, dan network secara instan.
-- **Minimal List View:** Informasi ditampilkan rapi dalam row-based layout yang bersih, terinspirasi dari Activity Logs.
-- **Improved Resource Tracking:** Perbaikan akurasi jumlah Volume dan Network di sidebar serta deteksi penggunaan resource yang lebih cerdas.
-
-### 🚀 Deployment Templates (NEW ✨)
-- **17 Template Siap Pakai:** Langsung deploy service populer tanpa konfigurasi manual.
-- **Auto-fill Form:** Pilih template, semua field (image, port, env vars, restart policy) terisi otomatis.
-- **Auto Image Pull:** Image otomatis di-pull dari Docker Hub jika belum ada secara lokal.
-- **Auto Start:** Container langsung running setelah dibuat — tidak perlu klik Start manual.
-- **Error Detail Modal:** Jika deploy gagal (misal: port sudah dipakai), error Docker lengkap ditampilkan dalam modal informatif.
-
-**Template tersedia:**
-
-| Kategori | Template |
-|---|---|
-| 🤖 **AI / ML** | **OpenClaw (HOT)**, **FlowiseAI (HOT)** |
-| 🛠️ **Automation** | **n8n (HOT)** |
-| 🌐 **Web Server** | Nginx, Apache HTTP |
-| 🔁 **Proxy** | Traefik |
-| 📝 **CMS** | WordPress |
-| ️ **Database** | MySQL 8, MariaDB, PostgreSQL, Redis, MongoDB |
-| ⚙️ **DevOps** | Portainer, pgAdmin 4 |
-| 📊 **Monitoring** | Grafana Monitoring (Full Stack), Grafana (Standalone), Prometheus |
-| 💬 **Messaging** | RabbitMQ |
-| 📦 **Storage** | MinIO |
-| 🔍 **Search** | Elasticsearch |
-
-![Deploy Templates](web/screenshots/deploy-templates.png)
+- **Responsive Grid:** Informasi penting (ID, Image, Port, Created) ditampilkan dengan rapi.
 
 ### 🚀 Manajemen Container Lengkap
 - **Kontrol Penuh:** Start, Stop, Restart, dan Kill container dengan satu klik.
 - **Quick Exec:** Eksekusi perintah langsung ke dalam container tanpa membuka terminal terpisah.
 - **Log Viewer:** Lihat log aktivitas container secara real-time.
-- **Error Details:** Error saat Start/Restart ditampilkan dengan lengkap, bukan hanya notifikasi singkat.
 - **Batch Actions:** Prune container yang tidak digunakan dengan cepat.
-
-![Container Detail](web/screenshots/container-detail.png)
 
 ### 💻 Terminal Web Canggih
 - **Full Screen Mode:** Terminal xterm.js yang terintegrasi penuh, memberikan pengalaman seperti terminal native di browser.
 - **WebSocket Connection:** Koneksi real-time yang stabil dan responsif.
 - **Fitur Lengkap:** Mendukung copy-paste, command history, dan resizing otomatis.
+
+![Terminal View](web/image2.png)
 
 ### 🌍 Multi-Host Support
 - **Kelola Banyak Server:** Hubungkan dan kelola multiple Docker Hosts (Local & Remote VM/VPS) dari satu dashboard.
@@ -67,14 +40,13 @@
 - **Real-time Status:** Dashboard menampilkan status Traefik (Running/Stopped) dan lokasi containernya.
 
 
-### 🛠️ Manajemen Resource Lainnya (Improved ✨)
+### 🛠️ Manajemen Resource Lainnya
 - **Images:** Pull, Tag, Inspect, dan Hapus Docker Image.
-- **Volumes:** Buat dan kelola Volume data persisten. Kini dengan informasi detail Driver, Scope, dan status penggunaan (Used/Unused) yang akurat.
-- **Networks:** Atur konfigurasi jaringan Docker dengan mudah. Mendukung tampilan informasi detail IPv4 Subnet dan Gateway secara langsung di dashboard.
+- **Volumes:** Buat dan kelola Volume data persisten.
+- **Networks:** Atur konfigurasi jaringan Docker dengan mudah.
 
 ### 🚀 CI/CD Pipeline Management
 ![CI/CD Dashboard](web/cicd.png)
-
 
 Kelola end-to-end CI/CD pipeline dengan dashboard yang intuitif:
 - **Pipeline Creation:** Buat pipeline dengan repository, branch, build command, dan deploy command.
@@ -134,6 +106,31 @@ Kelola Kubernetes cluster secara langsung dari Dashboard:
 **Namespaces & RBAC:**
 - **Multi-Namespace Support:** Switch antar namespace untuk isolasi resource.
 - **Workspace Integration:** K0s management terintegrasi dengan workspace/team permission system.
+
+### 👤 User Service Account & Scoped Kubeconfig
+
+![Cluster Admin Users](web/screenshots/cluster-admin-users.png)
+
+Setiap user yang memiliki akses Kubernetes dapat dibatasi hanya pada namespace yang ditugaskan, menggunakan **ServiceAccount** dan **RoleBinding** yang dibuat secara otomatis.
+
+**Cara kerja:**
+1. Admin masuk ke **Cluster Admin** panel dan membuka tab **Users**.
+2. Klik tombol **🔐 NS** untuk menetapkan namespace yang boleh diakses user tersebut di cluster.
+3. Klik tombol **📥 Kubeconfig** untuk men-generate kubeconfig yang terikat ke ServiceAccount user.
+
+**Yang terjadi di background (otomatis):**
+- Sistem membuat `ServiceAccount` bernama `dm-<username>` di setiap namespace yang ditugaskan.
+- Sebuah `Secret` bertipe `kubernetes.io/service-account-token` dibuat untuk mengambil token SA.
+- `RoleBinding` dibuat di setiap namespace berdasarkan role user:
+
+| Role User | RoleBinding | ClusterRole |
+|---|---|---|
+| `admin` | ClusterRoleBinding (seluruh cluster) | `cluster-admin` |
+| `user_k8s_full` | RoleBinding per namespace | `admin` |
+| lainnya | RoleBinding per namespace | `view` |
+
+- Kubeconfig yang di-generate hanya bisa mengakses namespace yang ditugaskan — `kubectl get pods -n other-ns` akan ditolak.
+- Untuk user yang login sendiri, endpoint `GET /api/k0s/clusters/{id}/my-kubeconfig` otomatis menentukan scope berdasarkan identitas login (admin mendapat kubeconfig full cluster-admin, user biasa mendapat SA-scoped kubeconfig).
 
 ## 🛠️ Teknologi yang Digunakan
 
@@ -384,7 +381,32 @@ Sistem otomatis menggunakan **IP host + published port** untuk remote containers
 
 ## 🔐 Single Sign-On (SSO) Configuration
 
-Docker Manager supports enterprise-grade authentication using **GitLab** and **Microsoft Entra ID**.
+Docker Manager supports enterprise-grade authentication using **GitLab**, **Microsoft Entra ID**, and any **Generic OIDC** provider.
+
+### 3. Generic OIDC Provider Setup (Keycloak, Google, Okta, Authentik, Dex, dll.)
+
+![Generic OIDC Provider Settings](web/screenshots/sso-oidc.png)
+
+Works with any OIDC-compliant provider that exposes a `/.well-known/openid-configuration` discovery endpoint.
+
+**Langkah konfigurasi:**
+1.  Di provider OIDC Anda (misal Keycloak), buat **Client** / **Application** baru dengan tipe `confidential` dan grant type `authorization_code`.
+2.  Set **Redirect URI** ke: `http://your-server-ip:8080/api/auth/oidc/callback`.
+3.  Salin **Issuer URL**, **Client ID**, dan **Client Secret**.
+4.  Di Docker Manager, buka **Admin Panel** -> **SSO Settings** -> **Generic OIDC Provider**.
+5.  Aktifkan toggle, isi semua field, lalu klik **Save Changes**.
+
+| Field | Keterangan | Contoh |
+|---|---|---|
+| **Display Name** | Label yang muncul di tombol login | `Keycloak` |
+| **Issuer URL** | Base URL discovery OIDC | `https://keycloak.example.com/realms/myrealm` |
+| **Client ID** | ID aplikasi di provider | `docker-manager` |
+| **Client Secret** | Secret aplikasi | `abc123...` |
+| **Redirect URI** | Harus didaftarkan di provider | `http://your-domain:8080/api/auth/oidc/callback` |
+| **Default Role** | Role yang diberikan ke user baru | `user_docker_basic` |
+| **Scopes** | OIDC scopes yang diminta | `openid profile email` |
+
+**Auto-provisioning:** User yang login via OIDC pertama kali akan otomatis dibuat di database lokal dengan **Default Role** yang dikonfigurasi. Username diambil dari klaim `preferred_username` → `name` → `email` → `sub` (prioritas berurutan).
 
 ### 1. GitLab SSO Setup
 1.  Navigate to your GitLab instance (or GitLab.com) -> **Settings** -> **Applications**.
@@ -421,10 +443,26 @@ The application implements a strict permission system to separate Administrators
 | **Docker Hosts** | Add, Connect, Delete Hosts | ❌ No Access |
 | **Containers** | Full Control (Start, Stop, Kill, Delete, Exec) | **Restart Only** (Assigned Containers) |
 | **SSO Settings** | Configure Providers | ❌ No Access |
+| **K8s Namespace Access** | Assign Namespaces per User | Hanya Namespace yang Ditugaskan |
+| **Kubeconfig Download** | Full cluster-admin kubeconfig | SA-scoped kubeconfig |
+
+### Kubernetes Role Mapping
+
+Role user di Docker Manager dipetakan ke Kubernetes ClusterRole secara otomatis saat meminta kubeconfig:
+
+| Docker Manager Role | Kubernetes Access | Scope |
+|---|---|---|
+| `admin` | `cluster-admin` | Seluruh cluster |
+| `user_k8s_full` | `admin` | Namespace yang ditugaskan saja |
+| `user_k8s_view` | `view` | Namespace yang ditugaskan saja |
+| lainnya | `view` | Namespace yang ditugaskan saja |
 
 ### How it Works
 1.  **Admins** create Projects (e.g., "Web App A") and assign specific Containers (Resources) to that Project.
 2.  **Admins** create Users and assign them to the Project.
 3.  **Users** log in and can *only* see the containers within their assigned projects. They are restricted to performing **safe actions** (Restart) to resolve issues without modifying infrastructure.
+4.  Untuk Kubernetes: **Admins** assign namespace ke user via Cluster Admin panel, lalu user dapat download kubeconfig yang sudah dibatasi sesuai akses namespace-nya.
 
 ---
+
+*Dibuat dengan ❤️ untuk komunitas Docker.*
