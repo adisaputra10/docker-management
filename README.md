@@ -133,6 +133,58 @@ Setiap user yang memiliki akses Kubernetes dapat dibatasi hanya pada namespace y
 - **Auto-sync RBAC:** Setiap kali namespace ditambahkan atau dihapus via tombol 🔐 NS, sistem otomatis membuat atau menghapus `RoleBinding` di cluster tanpa perlu download ulang kubeconfig. Kubeconfig yang sudah ada langsung berlaku untuk namespace baru.
 - Untuk user yang login sendiri, endpoint `GET /api/k0s/clusters/{id}/my-kubeconfig` otomatis menentukan scope berdasarkan identitas login (admin mendapat kubeconfig full cluster-admin, user biasa mendapat SA-scoped kubeconfig).
 
+### 📋 Kubernetes Audit Log
+
+![Kubernetes Audit Log](web/screenshots/audit-log.png)
+
+Setiap request yang masuk melalui **kubectl proxy** dicatat secara otomatis di **Audit Log** pada Admin Panel. Log ini memungkinkan admin memantau seluruh aktivitas Kubernetes yang dilakukan oleh setiap user.
+
+**Cara mengakses:**
+1. Login sebagai **admin** ke Docker Manager.
+2. Buka **Admin Panel** → **Audit Log**.
+3. Filter berdasarkan user, service (`kubectl`), atau cluster.
+
+**Informasi yang dicatat per entry:**
+
+| Kolom | Keterangan | Contoh |
+|---|---|---|
+| **Timestamp** | Waktu request | `3/8/2026, 9:32:32 PM` |
+| **User** | Username yang melakukan aksi | `test` |
+| **Service** | Jenis service yang diakses | `kubectl` |
+| **Action** | Nama aksi | `cluster=1` |
+| **Details** | HTTP method + Kubernetes API path | `method=GET path=/api/v1/namespaces/test1/pods` |
+| **Command** | Terjemahan ke perintah kubectl | `kubectl get pod -n test1` |
+| **Status** | Hasil request | `success` / `error` |
+
+**Contoh entri Audit Log kubectl:**
+
+```
+User: test | Service: kubectl | Details: method=GET path=/api/v1/namespaces/test1/pods
+→ Command: kubectl get pod -n test1 | Status: success
+
+User: test | Service: kubectl | Details: method=GET path=/api/v1/namespaces/test1/pods/test1-7b55bccbb6-lnrpm
+→ Command: kubectl get pod test1-7b55bccbb6-lnrpm -n test1 | Status: success
+
+User: test | Service: kubectl | Details: method=GET path=/api/v1/namespaces/test1/pods/test1-7b55bccbb6-lnrpm/exec
+→ Command: kubectl exec test1-7b55bccbb6-lnrpm -n test1 -- <cmd> | Status: success
+```
+
+**Terjemahan perintah otomatis** — sistem secara cerdas menerjemahkan Kubernetes API call ke perintah kubectl yang setara:
+
+| Kubernetes API Path | Kubectl Command |
+|---|---|
+| `GET /api/v1/namespaces/{ns}/pods` | `kubectl get pod -n {ns}` |
+| `GET /api/v1/namespaces/{ns}/pods/{name}` | `kubectl get pod {name} -n {ns}` |
+| `DELETE /api/v1/namespaces/{ns}/pods/{name}` | `kubectl delete pod {name} -n {ns}` |
+| `GET /api/v1/namespaces/{ns}/pods/{name}/log` | `kubectl logs {name} -n {ns}` |
+| `GET /api/v1/namespaces/{ns}/pods/{name}/exec` | `kubectl exec {name} -n {ns} -- <cmd>` |
+| `GET /apis/apps/v1/namespaces/{ns}/deployments` | `kubectl get deployment -n {ns}` |
+| `PATCH /apis/apps/v1/namespaces/{ns}/deployments/{name}/scale` | `kubectl scale deployment {name} -n {ns}` |
+| `GET /api/v1/nodes` | `kubectl get node` |
+| `GET /api/v1/namespaces` | `kubectl get namespace` |
+
+> **Catatan:** Audit Log hanya dapat diakses oleh user dengan role **admin**. Setiap user biasa tidak dapat melihat aktivitas user lain.
+
 ## 🛠️ Teknologi yang Digunakan
 
 - **Backend:** Go (Golang) - *Native net/http & Gorilla Mux*
@@ -408,6 +460,99 @@ Works with any OIDC-compliant provider that exposes a `/.well-known/openid-confi
 | **Scopes** | OIDC scopes yang diminta | `openid profile email` |
 
 **Auto-provisioning:** User yang login via OIDC pertama kali akan otomatis dibuat di database lokal dengan **Default Role** yang dikonfigurasi. Username diambil dari klaim `preferred_username` → `name` → `email` → `sub` (prioritas berurutan).
+
+---
+
+#### 🔑 Contoh Lengkap: Authentik SSO Setup
+
+Berikut panduan langkah-demi-langkah mengintegrasikan **[Authentik](https://goauthentik.io/)** sebagai OIDC provider.
+
+**Asumsi:**
+- Authentik berjalan di `http://localhost:9000`
+- Docker Manager berjalan di `http://localhost:8080`
+
+##### Langkah 1 — Buat Provider di Authentik
+
+1. Login ke Authentik Admin UI: `http://localhost:9000/if/admin/`
+2. Buka **Applications → Providers → Create**.
+3. Pilih tipe **OAuth2/OpenID Connect Provider**.
+4. Isi form:
+   - **Name:** `Provider for Docker Manager`
+   - **Client type:** `Confidential`
+   - **Client ID:** (dicatat otomatis, salin nanti)
+   - **Client Secret:** (dicatat otomatis, salin nanti)
+   - **Redirect URIs/Origins (RegEx):**
+     ```
+     http://localhost:8080/auth/oidc/callback
+     ```
+   - **Signing Key:** Pilih key yang tersedia (misal `authentik Self-signed Certificate`)
+5. Klik **Finish**.
+
+##### Langkah 2 — Buat Application di Authentik
+
+1. Buka **Applications → Applications → Create**.
+2. Isi form:
+   - **Name:** `Docker Manager`
+   - **Slug:** `docker-manager` *(slug ini menjadi bagian dari Issuer URL)*
+   - **Provider:** Pilih provider yang baru dibuat
+3. Klik **Create**.
+
+##### Langkah 3 — Ambil Issuer URL
+
+Issuer URL Authentik mengikuti format:
+```
+http://<authentik-host>/application/o/<application-slug>/
+```
+
+Contoh dengan slug `docker-manager`:
+```
+http://localhost:9000/application/o/docker-manager/
+```
+
+Verifikasi discovery endpoint-nya bisa diakses:
+```
+http://localhost:9000/application/o/docker-manager/.well-known/openid-configuration
+```
+
+##### Langkah 4 — Konfigurasi Docker Manager
+
+1. Login sebagai **admin** ke Docker Manager.
+2. Buka **Admin Panel → SSO Settings → Generic OIDC Provider**.
+3. Isi form sebagai berikut:
+
+| Field | Nilai |
+|---|---|
+| **Enable OIDC** | ✅ ON |
+| **Display Name** | `Authentik` |
+| **Issuer URL** | `http://localhost:9000/application/o/docker-manager/` |
+| **Client ID** | *(salin dari Authentik provider)* |
+| **Client Secret** | *(salin dari Authentik provider)* |
+| **Redirect URI** | `http://localhost:8080/auth/oidc/callback` |
+| **Default Role** | `user_docker` |
+| **Scopes** | `openid profile email` |
+
+4. Klik **Save Changes**.
+
+##### Langkah 5 — Test Login
+
+1. Buka `http://localhost:8080/login.html` di browser (gunakan **incognito/private window**).
+2. Klik tombol **"Login with Authentik"**.
+3. Browser akan diarahkan ke halaman login Authentik.
+4. Login dengan akun Authentik Anda.
+5. Setelah berhasil, Anda akan otomatis diarahkan kembali ke Docker Manager dashboard.
+
+> **Catatan:** Jika user belum ada di database Docker Manager, sistem akan otomatis membuat user baru dengan **Default Role** yang dikonfigurasi (`user_docker`). User tersebut bisa di-promote ke `admin` melalui **Admin Panel → User Management**.
+
+##### Troubleshooting Authentik
+
+| Masalah | Penyebab | Solusi |
+|---|---|---|
+| `Invalid_grant` saat callback | Redirect URI tidak cocok | Pastikan Redirect URI di Authentik **persis sama** dengan yang dikonfigurasi di Docker Manager |
+| `Discovery failed 404` | Slug aplikasi salah | Cek slug aplikasi di Authentik, pastikan Issuer URL menggunakan **application slug** (bukan provider name) |
+| `Invalid or expired state` | Cookie `oidc_state` tidak ada | Pastikan browser mengizinkan cookie dari `localhost`; gunakan incognito window |
+| `User not found in userinfo` | Scope tidak mencakup profil | Tambahkan scope `profile` dan `email` di konfigurasi SSO |
+
+---
 
 ### 1. GitLab SSO Setup
 1.  Navigate to your GitLab instance (or GitLab.com) -> **Settings** -> **Applications**.
