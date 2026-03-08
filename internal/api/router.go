@@ -18,6 +18,12 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/auth/oidc/begin", OIDCBeginAuth).Methods("GET")
 	api.HandleFunc("/auth/oidc/callback", OIDCCallback).Methods("GET")
 
+	// Also register OIDC callback on the root path (without /api prefix) because
+	// Authentik and some providers redirect to the literal redirect_uri which
+	// may not include /api — both paths are valid.
+	r.HandleFunc("/auth/oidc/callback", OIDCCallback).Methods("GET")
+	r.HandleFunc("/auth/oidc/begin", OIDCBeginAuth).Methods("GET")
+
 	// Users
 	api.HandleFunc("/users", ListUsers).Methods("GET")
 	api.HandleFunc("/users", CreateUser).Methods("POST")

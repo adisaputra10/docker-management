@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/adisaputra10/docker-management/internal/database"
@@ -42,36 +41,42 @@ type SSOSettings struct {
 	StandardLoginEnabled bool `json:"standard_login_enabled"`
 }
 
-// ── OIDC state store (CSRF protection) ───────────────────────────────────────
-var (
-	oidcStateMu sync.Mutex
-	oidcStates  = map[string]time.Time{}
-)
+// ── OIDC state store (CSRF protection via cookie) ────────────────────────────
+// State is stored in a short-lived HttpOnly cookie so it survives server
+// restarts and scales across multiple processes.
 
 func oidcGenerateState() string {
 	b := make([]byte, 16)
 	rand.Read(b)
-	state := hex.EncodeToString(b)
-	oidcStateMu.Lock()
-	oidcStates[state] = time.Now().Add(10 * time.Minute)
-	// Purge expired states
-	for k, exp := range oidcStates {
-		if time.Now().After(exp) {
-			delete(oidcStates, k)
-		}
-	}
-	oidcStateMu.Unlock()
-	return state
+	return hex.EncodeToString(b)
 }
 
-func oidcValidateState(state string) bool {
-	oidcStateMu.Lock()
-	defer oidcStateMu.Unlock()
-	exp, ok := oidcStates[state]
-	if ok {
-		delete(oidcStates, state)
+func oidcSetStateCookie(w http.ResponseWriter, state string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oidc_state",
+		Value:    state,
+		Path:     "/",
+		MaxAge:   600, // 10 minutes
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+func oidcValidateStateCookie(r *http.Request, state string) bool {
+	cookie, err := r.Cookie("oidc_state")
+	if err != nil {
+		return false
 	}
-	return ok && !time.Now().After(exp)
+	return cookie.Value != "" && cookie.Value == state
+}
+
+func oidcClearStateCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:   "oidc_state",
+		Value:  "",
+		Path:   "/",
+		MaxAge: -1,
+	})
 }
 
 // ── OIDC Discovery ────────────────────────────────────────────────────────────
@@ -265,6 +270,7 @@ func OIDCBeginAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	state := oidcGenerateState()
+	oidcSetStateCookie(w, state)
 
 	params := url.Values{}
 	params.Set("client_id", clientID)
@@ -296,10 +302,12 @@ func OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !oidcValidateState(state) {
+	if !oidcValidateStateCookie(r, state) {
+		log.Printf("[OIDC] State mismatch: cookie vs query param — possible replay or server restart")
 		http.Error(w, "Invalid or expired state parameter", http.StatusBadRequest)
 		return
 	}
+	oidcClearStateCookie(w)
 
 	// Load OIDC settings
 	issuer, _ := database.GetSetting("sso_oidc_issuer")
