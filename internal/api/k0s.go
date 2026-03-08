@@ -1192,17 +1192,21 @@ func GetKubeconfigStatus(w http.ResponseWriter, r *http.Request) {
 
 	var status string
 	var storedKc sql.NullString
-	err := database.DB.QueryRow("SELECT status, kubeconfig FROM k0s_clusters WHERE id = ?", clusterID).Scan(&status, &storedKc)
+	err := database.DB.QueryRow(
+		"SELECT status, kubeconfig FROM k0s_clusters WHERE id = ?",
+		clusterID,
+	).Scan(&status, &storedKc)
 	if err != nil {
 		http.Error(w, "Cluster not found", http.StatusNotFound)
 		return
 	}
 
-	kubeconfigAvailable := (status == "running") || (storedKc.Valid && strings.TrimSpace(storedKc.String) != "")
+	rawKCAvailable := (storedKc.Valid && strings.TrimSpace(storedKc.String) != "") || status == "running"
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"kubeconfig_available": kubeconfigAvailable,
+		"kubeconfig_available": rawKCAvailable,
+		"raw_available":        rawKCAvailable,
 		"status":               status,
 	})
 }
@@ -1473,3 +1477,6 @@ func recordActivityLog(action, target, details, status string) {
 		log.Printf("Error recording activity log: %v", err)
 	}
 }
+
+
+

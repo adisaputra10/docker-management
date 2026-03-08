@@ -23,6 +23,7 @@ type ActivityLog struct {
 	ID        int    `json:"id"`
 	Action    string `json:"action"`
 	Target    string `json:"target"`
+	Details   string `json:"details"`
 	Timestamp string `json:"timestamp"`
 	Status    string `json:"status"`
 }

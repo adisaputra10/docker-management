@@ -216,7 +216,7 @@ async function loadResource() {
     try {
         let url;
         let data;
-        
+
         // Special handling for users resource
         if (state.currentResource === 'users') {
             const res = await fetch(`${API_BASE}/users`);
@@ -1150,7 +1150,7 @@ async function showAssignNsModal(userId, username) {
                         ${checkboxes}
                     </div>
                     <div style="display:flex;gap:0.5rem;margin-top:1rem;">
-                        <button class="btn btn-primary" onclick='saveUserNsAssign("${userId}")' style="flex:1;">✓ Save</button>
+                        <button class="btn btn-primary" onclick='saveUserNsAssign("${userId}", "${escapeHtml(username)}", this.closest(".modal-overlay"))' style="flex:1;">✓ Save</button>
                         <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()" style="flex:1;">Cancel</button>
                     </div>
                 </div>
@@ -1163,37 +1163,55 @@ async function showAssignNsModal(userId, username) {
     }
 }
 
-async function saveUserNsAssign(userId) {
-    const selected = Array.from(document.querySelectorAll('.ns-assign-checkbox:checked')).map(cb => cb.value);
-    
+async function saveUserNsAssign(userId, username, modalEl) {
+    // Scope checkbox query to this specific modal to avoid picking up checkboxes
+    // from other modals or stale DOM elements.
+    const container = modalEl || document;
+    const selected = Array.from(container.querySelectorAll('.ns-assign-checkbox:checked')).map(cb => cb.value);
+
+    const saveBtn = container.querySelector('.btn.btn-primary');
+    if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
     try {
         const res = await fetch(`${API_BASE}/users/${userId}/namespaces`, {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-                'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 cluster_id: parseInt(state.clusterId),
                 namespaces: selected
             })
         });
-        
+
         if (res.ok) {
-            // Find and close the assign namespaces modal
-            const modals = document.querySelectorAll('.modal-overlay');
-            modals.forEach(m => {
-                if (m.querySelector('.modal-title') && m.querySelector('.modal-title').textContent.includes('Assign Namespaces')) {
-                    m.remove();
-                }
-            });
+            const data = await res.json();
+            modalEl && modalEl.remove();
+            // Show success toast
+            const nsList = (data.namespaces || selected).join(', ') || '(none)';
+            showToast(`✅ Namespaces for <strong>${data.username || username}</strong> updated: ${nsList}`, 'success');
             await loadResource();
         } else {
-            alert('Error assigning namespaces');
+            const errText = await res.text();
+            showToast(`❌ Error saving namespaces: ${errText}`, 'error');
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '✓ Save'; }
         }
     } catch (e) {
-        alert('Failed: ' + e.message);
+        showToast(`❌ Failed: ${e.message}`, 'error');
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '✓ Save'; }
     }
+}
+
+function showToast(html, type) {
+    const toast = document.createElement('div');
+    toast.style.cssText = [
+        'position:fixed', 'bottom:1.5rem', 'right:1.5rem', 'z-index:9999',
+        'padding:0.75rem 1.25rem', 'border-radius:8px', 'font-size:0.875rem',
+        'max-width:420px', 'box-shadow:0 4px 20px rgba(0,0,0,0.5)',
+        'color:#e2e8f0', 'transition:opacity 0.4s',
+        type === 'success' ? 'background:#14532d;border:1px solid #22c55e' : 'background:#450a0a;border:1px solid #ef4444'
+    ].join(';');
+    toast.innerHTML = html;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 4000);
 }
 
 function showUserNsModal(userId, username) {

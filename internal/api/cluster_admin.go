@@ -194,12 +194,15 @@ func checkNamespaceAccess(user User, clusterID int, namespace string) bool {
 		"SELECT COUNT(*) FROM user_namespaces WHERE user_id = ? AND cluster_id = ? AND namespace = ?",
 		user.ID, clusterID, namespace,
 	).Scan(&count)
-	
+
 	if err != nil {
-		log.Printf("[checkNamespaceAccess] Error querying: %v", err)
+		log.Printf("[checkNamespaceAccess] DB error: user_id=%d cluster_id=%d namespace=%q: %v",
+			user.ID, clusterID, namespace, err)
 		return false
 	}
 
+	log.Printf("[checkNamespaceAccess] user_id=%d (%s) cluster_id=%d namespace=%q → count=%d (allowed=%v)",
+		user.ID, user.Username, clusterID, namespace, count, count > 0)
 	return count > 0
 }
 
@@ -1519,6 +1522,33 @@ users:
 `, clusterBlock, username, namespace, contextName, contextName, username, token)
 }
 
+// buildProxyKubeconfigYAML returns a kubeconfig whose server URL points to the
+// docker-manager K8s proxy endpoint. The Bearer token is the caller's session
+// token, so the kubeconfig expires together with the session (24 h). All
+// kubectl commands issued with this kubeconfig are logged to the audit log.
+func buildProxyKubeconfigYAML(proxyServer, sessionToken, username, namespace string) string {
+	contextName := username + "@proxy"
+	return fmt.Sprintf(`apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: %s
+    insecure-skip-tls-verify: true
+  name: cluster-proxy
+contexts:
+- context:
+    cluster: cluster-proxy
+    user: %s
+    namespace: %s
+  name: %s
+current-context: %s
+users:
+- name: %s
+  user:
+    token: %s
+`, proxyServer, username, namespace, contextName, contextName, username, sessionToken)
+}
+
 // ensureCustomClusterRoles applies the two managed ClusterRoles to the cluster.
 // These define the exact permissions for dm-k8s-view and dm-k8s-full users.
 // Using kubectl apply so it is safe to call multiple times (idempotent).
@@ -2019,10 +2049,10 @@ func GenerateUserServiceAccountKubeconfig(w http.ResponseWriter, r *http.Request
 	w.Write([]byte(userKC))
 }
 
-// DownloadMyKubeconfig returns a kubeconfig scoped to the currently logged-in user.
-//   - admin role → returns the stored cluster admin kubeconfig as-is
-//   - any other role → creates/updates a ServiceAccount for that user and returns a
-//     namespace-scoped kubeconfig matching their assigned namespaces and role
+// DownloadMyKubeconfig returns a kubeconfig for the currently logged-in user:
+//   - admin role → raw cluster-admin kubeconfig (direct access to K8s, unchanged)
+//   - other roles → proxy kubeconfig routed through this server; credentials
+//     are derived automatically from the stored admin kubeconfig
 //
 // GET /api/k0s/clusters/{id}/my-kubeconfig
 func DownloadMyKubeconfig(w http.ResponseWriter, r *http.Request) {
@@ -2035,47 +2065,74 @@ func DownloadMyKubeconfig(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	clusterID := vars["id"]
 
-	// Always need the stored admin kubeconfig (as the base / to run kubectl)
+	var clusterName string
 	var storedKC sql.NullString
-	if err := database.DB.QueryRow(
-		"SELECT COALESCE(kubeconfig,'') FROM k0s_clusters WHERE id = ?", clusterID,
-	).Scan(&storedKC); err != nil {
+	err := database.DB.QueryRow(
+		"SELECT name, COALESCE(kubeconfig,'') FROM k0s_clusters WHERE id = ?", clusterID,
+	).Scan(&clusterName, &storedKC)
+	if err != nil {
 		http.Error(w, "Cluster not found", http.StatusNotFound)
 		return
 	}
-	if strings.TrimSpace(storedKC.String) == "" {
-		http.Error(w, "Cluster kubeconfig not available yet — please wait for provisioning", http.StatusBadRequest)
-		return
-	}
 
-	// Admin gets the raw admin kubeconfig directly
+	// ── Admin: return raw cluster-admin kubeconfig (direct K8s access, unchanged) ──
 	if HasRole(me.Role, "admin") {
-		log.Printf("[MyKubeconfig] Admin %s downloading cluster admin kubeconfig for cluster %s", me.Username, clusterID)
-		var clusterName string
-		database.DB.QueryRow("SELECT name FROM k0s_clusters WHERE id = ?", clusterID).Scan(&clusterName)
+		if strings.TrimSpace(storedKC.String) == "" {
+			http.Error(w, "Cluster kubeconfig not available yet — please wait for provisioning or import", http.StatusBadRequest)
+			return
+		}
+		log.Printf("[MyKubeconfig] Admin %s downloading raw kubeconfig for cluster %s", me.Username, clusterID)
 		w.Header().Set("Content-Type", "application/x-yaml")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kubeconfig-%s.yaml"`, clusterName))
 		w.Write([]byte(storedKC.String))
 		return
 	}
 
-	// Non-admin: generate a ServiceAccount kubeconfig scoped to their namespaces
+	// ── Non-admin: return proxy kubeconfig (user → this server → K8s) ──
+	if strings.TrimSpace(storedKC.String) == "" {
+		http.Error(w, "Cluster kubeconfig not available — admin must import a kubeconfig first", http.StatusBadRequest)
+		return
+	}
+
+	sessionToken := ""
+	if auth := r.Header.Get("Authorization"); strings.HasPrefix(auth, "Bearer ") {
+		sessionToken = strings.TrimPrefix(auth, "Bearer ")
+	}
+	if sessionToken == "" {
+		sessionToken = r.URL.Query().Get("token")
+	}
+	if sessionToken == "" {
+		http.Error(w, "Unauthorized: missing session token", http.StatusUnauthorized)
+		return
+	}
+
+	// Always use HTTPS port 8443 for the kubectl proxy URL.
+	// kubectl ≥1.27 refuses to send Authorization: Bearer headers to plain
+	// http:// endpoints; HTTPS (with insecure-skip-tls-verify) is required.
+	host := r.Host
+	if host == "" {
+		host = "localhost"
+	}
+	// Strip any existing port, then append 8443.
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+	proxyServer := fmt.Sprintf("https://%s:8443/api/k0s/clusters/%s/proxy", host, clusterID)
+
+	defaultNS := "default"
 	userIDStr := strconv.Itoa(me.ID)
-	namespaces, err := getUserNamespacesForCluster(userIDStr, clusterID)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	namespaces, _ := getUserNamespacesForCluster(userIDStr, clusterID)
+	if len(namespaces) > 0 {
+		defaultNS = namespaces[0]
 	}
 
-	userKC, err := generateSAKubeconfigContent(storedKC.String, me.Username, me.Role, namespaces)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
+	log.Printf("[MyKubeconfig] User %s (role=%s) downloading proxy kubeconfig for cluster %s (proxy=%s)",
+		me.Username, me.Role, clusterID, proxyServer)
 
+	kc := buildProxyKubeconfigYAML(proxyServer, sessionToken, me.Username, defaultNS)
 	w.Header().Set("Content-Type", "application/x-yaml")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kubeconfig-%s.yaml"`, me.Username))
-	w.Write([]byte(userKC))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kubeconfig-%s.yaml"`, clusterName))
+	w.Write([]byte(kc))
 }
 
 // GetPodEvents returns events related to a pod

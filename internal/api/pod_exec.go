@@ -62,7 +62,13 @@ func PodExec(w http.ResponseWriter, r *http.Request) {
 
 	// Imported cluster with a kubeconfig → run kubectl exec locally
 	if storedKC.Valid && strings.TrimSpace(storedKC.String) != "" {
-		podExecViaKubeconfig(storedKC.String, podName, namespace, container, shell, conn)
+		// Capture the authenticated user (if any) for audit logging.
+		execUser, _ := GetUserFromContext(r.Context())
+		execUsername := execUser.Username
+		if execUsername == "" {
+			execUsername = "unknown"
+		}
+		podExecViaKubeconfig(storedKC.String, podName, namespace, container, shell, conn, clusterID, execUsername)
 		return
 	}
 
@@ -176,7 +182,7 @@ func PodExec(w http.ResponseWriter, r *http.Request) {
 // This requests tty=true from the API server so the shell inside the pod
 // gets a real PTY — enabling prompts, echo, and full interactive behaviour —
 // without needing any PTY on the management server side.
-func podExecViaKubeconfig(kubeconfigContent, podName, namespace, container, shell string, conn *websocket.Conn) {
+func podExecViaKubeconfig(kubeconfigContent, podName, namespace, container, shell string, conn *websocket.Conn, clusterID, execUsername string) {
 	wsSendStr := func(msg string) {
 		conn.WriteMessage(websocket.TextMessage, []byte(msg))
 	}
@@ -282,6 +288,8 @@ func podExecViaKubeconfig(kubeconfigContent, podName, namespace, container, shel
 	}()
 
 	// frontend → k8s API: channel 0=stdin, channel 4=resize
+	// Also buffer keystrokes line-by-line to capture commands for the audit log.
+	var cmdBuf strings.Builder
 	go func() {
 		for {
 			_, msg, readErr := conn.ReadMessage()
@@ -302,6 +310,28 @@ func podExecViaKubeconfig(kubeconfigContent, podName, namespace, container, shel
 					continue
 				}
 			}
+			// Buffer printable characters for audit logging.
+			for _, b := range msg {
+				switch {
+				case b == '\r' || b == '\n':
+					if cmd := strings.TrimSpace(cmdBuf.String()); cmd != "" {
+						go recordActivityLog(
+							"exec_command",
+							fmt.Sprintf("cluster=%s pod=%s/%s", clusterID, namespace, podName),
+							fmt.Sprintf("user=%s cmd=%s", execUsername, cmd),
+							"success",
+						)
+					}
+					cmdBuf.Reset()
+				case b == 0x7f: // backspace
+					if s := cmdBuf.String(); len(s) > 0 {
+						cmdBuf.Reset()
+						cmdBuf.WriteString(s[:len(s)-1])
+					}
+				case b >= 0x20 && b < 0x7f: // printable ASCII
+					cmdBuf.WriteByte(b)
+				}
+			}
 			// Regular keystrokes → channel 0 (stdin)
 			k8sWs.WriteMessage(websocket.BinaryMessage, append([]byte{0}, msg...)) //nolint:errcheck
 		}
@@ -310,4 +340,3 @@ func podExecViaKubeconfig(kubeconfigContent, podName, namespace, container, shel
 	<-errChan
 	log.Printf("[PodExec] exec session ended for pod=%s ns=%s", podName, namespace)
 }
-

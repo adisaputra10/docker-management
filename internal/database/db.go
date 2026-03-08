@@ -209,6 +209,8 @@ func InitDB() error {
 		"ALTER TABLE k0s_clusters ADD COLUMN auth_method TEXT DEFAULT 'password'",
 		"ALTER TABLE k0s_clusters ADD COLUMN ssh_key TEXT",
 		"ALTER TABLE k0s_clusters ADD COLUMN kubeconfig TEXT",
+		"ALTER TABLE k0s_clusters ADD COLUMN sa_token TEXT",
+		"ALTER TABLE k0s_clusters ADD COLUMN api_server TEXT",
 	} {
 		DB.Exec(col) // ignore error if column already exists
 	}
@@ -412,7 +414,7 @@ func LogActivity(action, target, status string) {
 }
 
 func GetActivityLogs() ([]models.ActivityLog, error) {
-	rows, err := DB.Query("SELECT id, action, target, timestamp, status FROM activity_logs ORDER BY id DESC LIMIT 100")
+	rows, err := DB.Query("SELECT id, action, target, COALESCE(details,''), timestamp, status FROM activity_logs ORDER BY id DESC LIMIT 500")
 	if err != nil {
 		return nil, err
 	}
@@ -421,7 +423,7 @@ func GetActivityLogs() ([]models.ActivityLog, error) {
 	var logs []models.ActivityLog
 	for rows.Next() {
 		var logEntry models.ActivityLog
-		if err := rows.Scan(&logEntry.ID, &logEntry.Action, &logEntry.Target, &logEntry.Timestamp, &logEntry.Status); err != nil {
+		if err := rows.Scan(&logEntry.ID, &logEntry.Action, &logEntry.Target, &logEntry.Details, &logEntry.Timestamp, &logEntry.Status); err != nil {
 			continue
 		}
 		logs = append(logs, logEntry)

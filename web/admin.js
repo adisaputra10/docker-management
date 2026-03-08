@@ -696,3 +696,205 @@ async function saveUserNamespaces(userId, username) {
         showToast(`Error: ${e.message}`, 'error');
     }
 }
+
+// Convert a kubectl audit log entry into the equivalent kubectl CLI command.
+// Parses "method=GET path=/api/v1/namespaces/test/pods" from the details field.
+function auditToKubectlCommand(log) {
+    if (log.action !== 'kubectl') return '';
+
+    const details = log.details || '';
+    const methodM = details.match(/method=([A-Z]+)/);
+    const pathM   = details.match(/path=([^\s]+)/);
+    if (!methodM || !pathM) return '';
+
+    const method = methodM[1];
+    const path   = pathM[1].split('?')[0]; // strip query string
+
+    if (/^\/(api\/?)?(\?|$)|(^\/apis\/?)($|\?)/.test(path)) return '';
+    if (path === '/version' || path === '/version/') return 'kubectl version';
+    if (path === '/healthz') return '';
+
+    const methodVerbs = { GET: 'get', DELETE: 'delete', POST: 'create', PUT: 'replace', PATCH: 'patch' };
+    const shortNames  = {
+        pods: 'pod', services: 'svc', deployments: 'deploy', replicasets: 'rs',
+        statefulsets: 'sts', daemonsets: 'ds', configmaps: 'cm', namespaces: 'ns',
+        nodes: 'node', persistentvolumes: 'pv', persistentvolumeclaims: 'pvc',
+        ingresses: 'ing', serviceaccounts: 'sa', jobs: 'job', cronjobs: 'cronjob',
+        events: 'events', secrets: 'secret', endpoints: 'ep',
+        clusterroles: 'clusterrole', clusterrolebindings: 'clusterrolebinding',
+        roles: 'role', rolebindings: 'rolebinding',
+        horizontalpodautoscalers: 'hpa', networkpolicies: 'netpol',
+        resourcequotas: 'quota', limitranges: 'limitrange',
+        replicationcontrollers: 'rc', podtemplates: 'podtemplate',
+    };
+
+    const verb = methodVerbs[method] || method.toLowerCase();
+    let ns = '', resource = '', name = '', subresource = '';
+
+    // Namespaced: /api/v1/namespaces/{ns}/{res}[/{name}[/{sub}]]
+    //          or /apis/{g}/{v}/namespaces/{ns}/{res}[/{name}[/{sub}]]
+    let m = path.match(/^\/apis?\/[^/]+\/[^/]+\/namespaces\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/)
+             || path.match(/^\/api\/v[^/]+\/namespaces\/([^/]+)\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?/);
+    if (m) {
+        [, ns, resource, name = '', subresource = ''] = m;
+    } else {
+        // Cluster-scoped: /api/v1/{res}[/{name}] or /apis/{g}/{v}/{res}[/{name}]
+        const cm = path.match(/^\/api\/v[^/]+\/([^/]+)(?:\/([^/]+))?/)
+                || path.match(/^\/apis\/[^/]+\/[^/]+\/([^/]+)(?:\/([^/]+))?/);
+        if (!cm) return '';
+        [, resource, name = ''] = cm;
+    }
+
+    // Handle sub-resources
+    if (subresource === 'log')                    return `kubectl logs ${name}${ns ? ' -n ' + ns : ''}`;
+    if (subresource === 'exec')                   return `kubectl exec ${name}${ns ? ' -n ' + ns : ''} -- <cmd>`;
+    if (subresource === 'portforward')            return `kubectl port-forward ${name}${ns ? ' -n ' + ns : ''} <port>`;
+    if (subresource === 'attach')                 return `kubectl attach ${name}${ns ? ' -n ' + ns : ''}`;
+    if (subresource === 'scale')                  return `kubectl scale ${shortNames[resource]||resource} ${name}${ns ? ' -n ' + ns : ''} --replicas=<n>`;
+
+    const res = shortNames[resource] || resource;
+    let cmd = `kubectl ${verb} ${res}`;
+    if (name) cmd += ` ${name}`;
+    if (ns)   cmd += ` -n ${ns}`;
+    return cmd;
+}
+
+// --- Audit Log ---
+
+let _auditLogData = [];
+let _auditPage = 1;
+let _auditPageSize = 50;
+
+// Extract "user" from the details string e.g. "user=alice cmd=whoami".
+function auditExtractUser(log) {
+    const d = log.details || '';
+    const m = d.match(/(?:^|\s)user=([^\s]+)/);
+    return m ? m[1] : '—';
+}
+
+async function loadAuditLogs() {
+    const tbody = document.getElementById('audit-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="8" style="padding:1rem; color:#64748b; text-align:center;">Loading…</td></tr>';
+    try {
+        const res = await fetch(`${API_BASE}/logs`, {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const logs = await res.json();
+        _auditLogData = logs || [];
+        _auditPage = 1;
+        _populateAuditUserFilter();
+        _applyAuditFilters();
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" style="padding:1rem; color:#f87171; text-align:center;">Error: ${e.message}</td></tr>`;
+    }
+}
+
+function _populateAuditUserFilter() {
+    const sel = document.getElementById('audit-user-filter');
+    if (!sel) return;
+    const current = sel.value;
+    const users = [...new Set(_auditLogData.map(l => auditExtractUser(l)).filter(u => u !== '—'))].sort();
+    sel.innerHTML = '<option value="">All users</option>' +
+        users.map(u => `<option value="${escHtml(u)}"${u===current?' selected':''}>${escHtml(u)}</option>`).join('');
+}
+
+function auditSetPageSize() {
+    const sel = document.getElementById('audit-page-size');
+    _auditPageSize = parseInt(sel?.value || '50', 10);
+    _auditPage = 1;
+    _applyAuditFilters();
+}
+
+function auditChangePage(delta) {
+    _auditPage += delta;
+    _applyAuditFilters();
+}
+
+function filterAuditLogs() {
+    _auditPage = 1;
+    _applyAuditFilters();
+}
+
+function _applyAuditFilters() {
+    const q = (document.getElementById('audit-search')?.value || '').toLowerCase();
+    const userFilter = (document.getElementById('audit-user-filter')?.value || '').toLowerCase();
+
+    let filtered = _auditLogData;
+
+    if (userFilter) {
+        filtered = filtered.filter(l => auditExtractUser(l).toLowerCase() === userFilter);
+    }
+    if (q) {
+        filtered = filtered.filter(l =>
+            (l.action || '').toLowerCase().includes(q) ||
+            (l.target || '').toLowerCase().includes(q) ||
+            (l.details || '').toLowerCase().includes(q) ||
+            (l.status || '').toLowerCase().includes(q)
+        );
+    }
+
+    renderAuditLog(filtered);
+}
+
+function renderAuditLog(filtered) {
+    const tbody = document.getElementById('audit-tbody');
+    if (!tbody) return;
+
+    const total = filtered ? filtered.length : 0;
+    const pageSize = _auditPageSize;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    if (_auditPage > totalPages) _auditPage = totalPages;
+    if (_auditPage < 1) _auditPage = 1;
+
+    const start = (_auditPage - 1) * pageSize;
+    const page = (filtered || []).slice(start, start + pageSize);
+
+    // Update pager controls
+    const infoEl = document.getElementById('audit-pager-info');
+    const labelEl = document.getElementById('audit-page-label');
+    const prevBtn = document.getElementById('audit-prev');
+    const nextBtn = document.getElementById('audit-next');
+    if (infoEl) infoEl.textContent = total === 0 ? 'No results' : `${start + 1}–${Math.min(start + pageSize, total)} of ${total} entries`;
+    if (labelEl) labelEl.textContent = `Page ${_auditPage} / ${totalPages}`;
+    if (prevBtn) prevBtn.disabled = _auditPage <= 1;
+    if (nextBtn) nextBtn.disabled = _auditPage >= totalPages;
+
+    if (page.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="padding:1.5rem; color:#64748b; text-align:center;">No audit events found.</td></tr>';
+        return;
+    }
+
+    const actionColors = {
+        'kubectl':       '#60a5fa',
+        'exec_command':  '#f59e0b',
+        'k0s_provision': '#34d399',
+        'list_containers': '#94a3b8',
+    };
+
+    tbody.innerHTML = page.map((l, i) => {
+        const color = actionColors[l.action] || '#a78bfa';
+        const statusColor = l.status === 'success' ? '#34d399' : l.status === 'failed' ? '#f87171' : '#94a3b8';
+        const ts = l.timestamp ? new Date(l.timestamp).toLocaleString() : '—';
+        const extractedUser = auditExtractUser(l);
+        // Strip "user=xxx " prefix from details for cleaner display
+        const detailsClean = (l.details || '').replace(/^user=[^\s]+\s*/, '').trim() || '—';
+        const kubectlCmd = auditToKubectlCommand(l);
+        return `<tr style="border-bottom:1px solid rgba(255,255,255,0.05); background:${i%2===0?'#0f1117':'transparent'}">
+            <td style="padding:0.5rem 0.75rem; color:#64748b; font-size:0.78rem;">${l.id}</td>
+            <td style="padding:0.5rem 0.75rem; color:#94a3b8; white-space:nowrap; font-size:0.78rem;">${escHtml(ts)}</td>
+            <td style="padding:0.5rem 0.75rem; color:#93c5fd; font-size:0.8rem; font-weight:500; white-space:nowrap;">${escHtml(extractedUser)}</td>
+            <td style="padding:0.5rem 0.75rem;"><span style="color:${color}; font-weight:600; font-family:monospace; font-size:0.8rem;">${escHtml(l.action)}</span></td>
+            <td style="padding:0.5rem 0.75rem; color:#cbd5e1; font-size:0.8rem; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escHtml(l.target)}">${escHtml(l.target)}</td>
+            <td style="padding:0.5rem 0.75rem; color:#cbd5e1; font-size:0.8rem; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${escHtml(l.details || '')}">${escHtml(detailsClean)}</td>
+            <td style="padding:0.5rem 0.75rem; max-width:280px;">${kubectlCmd ? `<code style="background:#0f2744;color:#7dd3fc;padding:0.15rem 0.45rem;border-radius:4px;font-size:0.78rem;white-space:nowrap;display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;" title="${escHtml(kubectlCmd)}">${escHtml(kubectlCmd)}</code>` : '<span style="color:#475569;font-size:0.78rem;">—</span>'}</td>
+            <td style="padding:0.5rem 0.75rem;"><span style="color:${statusColor}; font-size:0.78rem;">${escHtml(l.status)}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function escHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}

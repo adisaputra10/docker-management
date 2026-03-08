@@ -2,6 +2,7 @@
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -529,8 +530,8 @@ func GetUserNamespaces(w http.ResponseWriter, r *http.Request) {
 // POST /api/users/{id}/namespaces
 // body: {"cluster_id":1,"namespaces":["default","kube-system"]}
 func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
-	user, success := GetUserFromContext(r.Context())
-	if !success || !HasRole(user.Role, "admin") {
+	admin, success := GetUserFromContext(r.Context())
+	if !success || !HasRole(admin.Role, "admin") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
@@ -551,21 +552,25 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Capture old namespace assignments before deletion (for RBAC cleanup)
+	// Look up the target user's username for logging
+	var targetUsername string
+	database.DB.QueryRow("SELECT username FROM users WHERE id = ?", userID).Scan(&targetUsername)
+
+	// Capture old namespace assignments before deletion (for RBAC cleanup).
+	// NOTE: rows.Close() is called explicitly — never use defer inside a scoped
+	// block, as defer runs at function return, not block end, which would hold
+	// the single SQLite connection open when the transaction below tries to start.
 	var oldNamespaces []string
-	{
-		rows, _ := database.DB.Query(
-			"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
-			userID, body.ClusterID,
-		)
-		if rows != nil {
-			defer rows.Close()
-			for rows.Next() {
-				var ns string
-				rows.Scan(&ns) //nolint:errcheck
-				oldNamespaces = append(oldNamespaces, ns)
-			}
+	if rows, err := database.DB.Query(
+		"SELECT namespace FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
+		userID, body.ClusterID,
+	); err == nil {
+		for rows.Next() {
+			var ns string
+			rows.Scan(&ns) //nolint:errcheck
+			oldNamespaces = append(oldNamespaces, ns)
 		}
+		rows.Close() // explicit close — frees the connection before Begin()
 	}
 
 	// Compute removed namespaces = old - new
@@ -583,6 +588,7 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 	// Start transaction
 	tx, err := database.DB.Begin()
 	if err != nil {
+		log.Printf("[AssignNamespaces] Begin tx error for user %s: %v", userID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -593,6 +599,7 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 		"DELETE FROM user_namespaces WHERE user_id = ? AND cluster_id = ?",
 		userID, body.ClusterID,
 	); err != nil {
+		log.Printf("[AssignNamespaces] DELETE error for user %s cluster %d: %v", userID, body.ClusterID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -604,6 +611,7 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 				"INSERT INTO user_namespaces (user_id, cluster_id, namespace) VALUES (?, ?, ?)",
 				userID, body.ClusterID, ns,
 			); err != nil {
+				log.Printf("[AssignNamespaces] INSERT error for user %s ns %s: %v", userID, ns, err)
 				http.Error(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
@@ -611,9 +619,13 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := tx.Commit(); err != nil {
+		log.Printf("[AssignNamespaces] Commit error for user %s: %v", userID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	log.Printf("[AssignNamespaces] admin=%s assigned namespaces %v to user_id=%s (%s) cluster=%d (removed: %v)",
+		admin.Username, body.Namespaces, userID, targetUsername, body.ClusterID, removedNS)
 
 	// Asynchronously sync Kubernetes RBAC so the user's existing kubeconfig
 	// immediately reflects the new namespace access without requiring re-download.
@@ -621,9 +633,11 @@ func AssignUserNamespaces(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"user_id":     userID,
-		"cluster_id":  body.ClusterID,
-		"namespaces": body.Namespaces,
+		"user_id":      userID,
+		"username":     targetUsername,
+		"cluster_id":   body.ClusterID,
+		"namespaces":   body.Namespaces,
+		"removed":      removedNS,
 	})
 }
 

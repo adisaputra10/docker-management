@@ -116,6 +116,15 @@ func NewRouter() *mux.Router {
 	api.HandleFunc("/k0s/clusters/{id}/kubeconfig-status", GetKubeconfigStatus).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/my-kubeconfig", DownloadMyKubeconfig).Methods("GET")
 	api.HandleFunc("/k0s/clusters/{id}/users/{userId}/sa-kubeconfig", GenerateUserServiceAccountKubeconfig).Methods("GET")
+	// Diagnostic: show parsed kubeconfig creds for a cluster (admin only).
+	api.HandleFunc("/k0s/clusters/{id}/proxy-info", K8sProxyInfo).Methods("GET")
+	// K8s API proxy — must be registered before specific sub-paths so gorilla/mux
+	// routes them here only when no more-specific route matches.
+	// Accepts all HTTP methods; WebSocket upgrade is handled inside K8sAPIProxy.
+	api.HandleFunc("/k0s/clusters/{id}/proxy/{path:.*}", K8sAPIProxy).Methods(
+		"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
+	api.HandleFunc("/k0s/clusters/{id}/proxy", K8sAPIProxy).Methods(
+		"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 	api.HandleFunc("/k0s/import", ImportK0sCluster).Methods("POST")
 	api.HandleFunc("/k0s/clusters/{id}/kubeconfig-update", UpdateClusterKubeconfig).Methods("PUT")
 	api.HandleFunc("/k0s/test-connection", TestK0sConnection).Methods("POST")

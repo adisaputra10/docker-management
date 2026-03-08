@@ -66,6 +66,16 @@
                     </svg>
                     <span class="nav-text">SSO Settings</span>
                 </a>
+                <a href="#" class="nav-item" onclick="showTab('auditlog')">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                        <line x1="16" y1="13" x2="8" y2="13" />
+                        <line x1="16" y1="17" x2="8" y2="17" />
+                        <polyline points="10 9 9 9 8 9" />
+                    </svg>
+                    <span class="nav-text">Audit Log</span>
+                </a>
             </div>
         </nav>
         <div class="sidebar-footer">
@@ -325,6 +335,64 @@
                 </div>
 
             </div>
+
+            <!-- Audit Log Section -->
+            <div id="auditlog-tab" class="tab-pane" style="display: none;">
+                <div class="section-header">
+                    <h2>Audit Log</h2>
+                    <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+                        <select id="audit-user-filter" class="form-input" onchange="filterAuditLogs()"
+                            style="padding: 0.4rem 0.65rem; font-size: 0.85rem; min-width: 130px;">
+                            <option value="">All users</option>
+                        </select>
+                        <input type="text" id="audit-search" class="form-input" placeholder="Filter action / target / details..."
+                            oninput="filterAuditLogs()" style="width: 240px; padding: 0.4rem 0.75rem; font-size: 0.85rem;">
+                        <select id="audit-page-size" class="form-input" onchange="auditSetPageSize()"
+                            style="padding: 0.4rem 0.65rem; font-size: 0.85rem; width: auto;">
+                            <option value="25">25 / page</option>
+                            <option value="50" selected>50 / page</option>
+                            <option value="100">100 / page</option>
+                            <option value="250">250 / page</option>
+                        </select>
+                        <button class="btn btn-primary" onclick="loadAuditLogs()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                            </svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="table-container" style="overflow-x: auto;">
+                    <table id="audit-table" style="width:100%; border-collapse: collapse; font-size: 0.85rem;">
+                        <thead>
+                            <tr style="background: #1e293b; color: #94a3b8; text-align:left;">
+                                <th style="padding: 0.6rem 0.75rem; white-space:nowrap;">#</th>
+                                <th style="padding: 0.6rem 0.75rem; white-space:nowrap;">Time</th>
+                                <th style="padding: 0.6rem 0.75rem; white-space:nowrap;">User</th>
+                                <th style="padding: 0.6rem 0.75rem; white-space:nowrap;">Action</th>
+                                <th style="padding: 0.6rem 0.75rem; white-space:nowrap;">Target</th>
+                                <th style="padding: 0.6rem 0.75rem;">Details</th>
+                                <th style="padding: 0.6rem 0.75rem; white-space:nowrap;">Command</th>
+                                <th style="padding: 0.6rem 0.75rem; white-space:nowrap;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-tbody">
+                            <tr><td colspan="8" style="padding:1rem; color:#64748b; text-align:center;">Loading…</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Pagination controls -->
+                <div id="audit-pager" style="display:flex; align-items:center; justify-content:space-between; padding:0.75rem 0.25rem; color:#94a3b8; font-size:0.82rem;">
+                    <span id="audit-pager-info"></span>
+                    <div style="display:flex; gap:0.4rem;">
+                        <button class="btn btn-secondary" id="audit-prev" onclick="auditChangePage(-1)" style="padding:0.3rem 0.75rem;">‹ Prev</button>
+                        <span id="audit-page-label" style="padding:0.3rem 0.6rem; align-self:center;"></span>
+                        <button class="btn btn-secondary" id="audit-next" onclick="auditChangePage(1)" style="padding:0.3rem 0.75rem;">Next ›</button>
+                    </div>
+                </div>
+            </div>
+
+            </div>
         </main>
     </div>
 
@@ -358,6 +426,7 @@
             if (tab === 'users') loadUsers();
             if (tab === 'projects') loadProjects();
             if (tab === 'sso') loadSSOSettings();
+            if (tab === 'auditlog') loadAuditLogs();
         }
         // Initial load
         loadUsers();
