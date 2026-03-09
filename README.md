@@ -133,6 +133,54 @@ Setiap user yang memiliki akses Kubernetes dapat dibatasi hanya pada namespace y
 - **Auto-sync RBAC:** Setiap kali namespace ditambahkan atau dihapus via tombol 🔐 NS, sistem otomatis membuat atau menghapus `RoleBinding` di cluster tanpa perlu download ulang kubeconfig. Kubeconfig yang sudah ada langsung berlaku untuk namespace baru.
 - Untuk user yang login sendiri, endpoint `GET /api/k0s/clusters/{id}/my-kubeconfig` otomatis menentukan scope berdasarkan identitas login (admin mendapat kubeconfig full cluster-admin, user biasa mendapat SA-scoped kubeconfig).
 
+**Contoh Kubeconfig yang di-download:**
+
+```yaml
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    server: https://localhost:8443/api/k0s/clusters/1/proxy
+    insecure-skip-tls-verify: true
+  name: cluster-proxy
+contexts:
+- context:
+    cluster: cluster-proxy
+    user: test
+    namespace: default
+  name: test@proxy
+current-context: test@proxy
+users:
+- name: test
+  user:
+    token: <token>
+```
+
+**Penjelasan:**
+- **`clusters[0].name`** : Nama cluster (`cluster-proxy`)
+- **`clusters[0].cluster.server`** : Kubernetes API server endpoint via Docker Manager proxy
+- **`contexts[0].context.user`** : ServiceAccount username yang terikat ke cluster
+- **`users[0].user.token`** : Bearer token dari ServiceAccount secret
+- **`current-context`** : Context yang digunakan saat menjalankan kubectl command
+
+**Penggunaan:**
+```bash
+# Simpan kubeconfig ke file
+cat > ~/.kube/config << 'EOF'
+# [isi dari kubeconfig di atas]
+EOF
+
+# Verifikasi koneksi
+kubectl cluster-info
+
+# List pods di namespace yang ditugaskan
+kubectl get pods
+
+# Akses ke namespace lain akan ditolak (karena SA terbatas pada namespace tertentu)
+kubectl get pods -n kube-system
+# Error: pods is forbidden: User "system:serviceaccount:default:dm-test" cannot list resource "pods" in API group "" in the namespace "kube-system"
+```
+
 ### 📋 Kubernetes Audit Log
 
 ![Kubernetes Audit Log](web/screenshots/audit-log.png)
